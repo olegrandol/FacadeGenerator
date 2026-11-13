@@ -1,17 +1,34 @@
 /*
-    FRAMER 0.6.1
+    FRAMER 0.6.2
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.2 :
+    - TOIT SUR CONTOUR : le toit part du contour DÉCALÉ vers l'extérieur (valeur du débord,
+      0,4 m par défaut) au lieu du rectangle englobant, et un FOND FERMÉ (face vers le bas)
+      bouche la vue d'en dessous, débord compris.
+      * Terrasse : dalle + acrotère suivant le contour décalé.
+      * Deux pentes : les versants suivent le contour décalé, faîtage exact sur le plus long
+        segment (pas de pignons maçonnés en mode contour ; le fond ferme le bâtiment).
+      * Quatre pans : même principe, pans de bout coupés par les diagonales à 45° des
+        extrémités du faîtage (footprints convexes recommandés).
+
+    CORRIGÉ EN 0.6.2 :
+    - Vitrines en arc : plantage "Mauvais index de membre local thunk libre" (zsp) au
+      moment de créer le verre en arc (collecteur inline passé en argument).
+    - Génération en mode contour après suppression de la spline choisie : message clair
+      au lieu du plantage "Tentative d'accès supprimée Objet scène".
+    - Toit du contour (0.6.1) : plantage "Impossible de convertir matrix3 vers Point3"
+      (axes du faîtage mal lus dans le repère du segment).
 
     NOUVEAU EN 0.6.1 :
     - MÉMOIRE : la mise à jour EN DIRECT ne crée plus d'entrée d'annulation (undo) :
       avant, chaque réglage empilait une façade complète en RAM jusqu'au plantage
       "Out of memory". Les mises à jour manuelles restent annulables (Ctrl+Z).
-    - TOITS (nouvel onglet Toit) : toit-terrasse avec acrotère (suit EXACTEMENT le contour,
-      polygone triangulé), toit à deux pentes (pignons) ou à quatre pans (croupes).
-      Pente, débord et hauteur d'acrotère réglables. Un toit remplace la corniche.
-      En mode contour, le faîtage des toits à pentes est aligné sur le plus long segment
-      et couvre le rectangle englobant (recommandé pour footprints convexes).
+    - TOITS (nouvel onglet Toit) : toit-terrasse avec acrotère, toit à deux pentes (pignons)
+      ou à quatre pans (croupes). Pente, débord et hauteur d'acrotère réglables.
+      Un toit remplace la corniche. (Depuis 0.6.2, en mode contour, le toit suit le
+      contour décalé vers l'extérieur — voir NOUVEAU EN 0.6.2.)
 
     NOUVEAU EN 0.6.0 :
     - CONTOUR FERMÉ : générez tout un bâtiment le long d'une spline fermée (nouveau mode
@@ -841,8 +858,16 @@ fn FR_ArchGlazing p u1 u2 zsp rise T fw basis frameMat glassMat =
     -- partie basse rectangulaire
     FR_Glass p u1 u2 0.0 zsp T fw basis frameMat glassMat 1
 
+    -- la bande du verre part d'une droite horizontale à la naissance de l'arc
+    -- (tableau construit à part : un collecteur inline en argument déclenche un bug MAXScript)
     if xsG.count >= 2 do
-        FR_StripMesh (p+"_ArchGlass") xsG (for k = 1 to xsG.count collect zsp) yGlass (FR_VC + T*0.1 - T*0.14) (FR_VC + T*0.1 + T*0.14) basis glassMat
+    (
+        local yBaseG = #()
+
+        for k = 1 to xsG.count do append yBaseG zsp
+
+        FR_StripMesh (p+"_ArchGlass") xsG yBaseG yGlass (FR_VC + T*0.1 - T*0.14) (FR_VC + T*0.1 + T*0.14) basis glassMat
+    )
 
     if xsF.count >= 2 do
         FR_StripMesh (p+"_ArchFrame") xsF yLoF yHiF (FR_VC - T/2) (FR_VC + T/2) basis frameMat
@@ -1136,34 +1161,231 @@ fn FR_RoofSlabContour p pts z0 th mat =
     )
 )
 
--- toit du contour : terrasse (polygone exact) ou pentes (rectangle englobant, faîtage sur le plus long segment)
+-- décalage d'un contour fermé vers l'EXTÉRIEUR (contour anti-horaire : l'extérieur est à droite)
+-- jonctions en mitre, bridées pour les angles très aigus (limité à ~3x le décalage)
+fn FR_OffsetContour pts d =
+(
+    local n = pts.count
+    local out = #()
+
+    for k = 1 to n do
+    (
+        local kp = k - 1
+        if kp < 1 do kp = n
+
+        local kn = k + 1
+        if kn > n do kn = 1
+
+        local dP = pts[k] - pts[kp]
+        dP.z = 0.0
+
+        local dN = pts[kn] - pts[k]
+        dN.z = 0.0
+
+        -- normale extérieure d'un segment : rotation de 90° vers la droite
+        local nP = [0,0,0]
+        local nN = [0,0,0]
+
+        if (length dP) > 0.000001 do nP = normalize [dP.y, -dP.x, 0]
+        if (length dN) > 0.000001 do nN = normalize [dN.y, -dN.x, 0]
+
+        local bis = nP + nN
+        local off
+
+        if (length bis) < 0.001 then
+            off = nN * d
+        else
+        (
+            bis = normalize bis
+
+            local c = dot bis nN
+
+            if c < 0.3 do c = 0.3
+
+            off = bis * (d / c)
+        )
+
+        append out (pts[k] + off)
+    )
+
+    out
+)
+
+-- fond horizontal fermé (vu d'en dessous) : polygone triangulé posé à la hauteur z, normales vers le bas
+fn FR_RoofCapContour p pts z mat =
+(
+    local tris = FR_Triangulate pts
+
+    if tris.count > 0 do
+    (
+        local n = pts.count
+        local vArr = #()
+        local fArr = #()
+
+        for k = 1 to n do append vArr [pts[k].x, pts[k].y, z]
+
+        -- triangulation anti-horaire (normale vers le haut) -> inversée pour regarder vers le bas
+        for t in tris do append fArr [t[1], t[3], t[2]]
+
+        local m = mesh vertices:vArr faces:fArr
+
+        update m
+
+        m.name = p
+        m.material = mat
+
+        append FR_Pool m
+
+        m
+    )
+)
+
+-- coupe un polygone (tableau de point3, anti-horaire) par la demi-plane nx*x + ny*y + c >= 0
+fn FR_SplitGE pts nx ny c =
+(
+    local res = #()
+    local n = pts.count
+
+    for k = 1 to n do
+    (
+        local a = pts[k]
+
+        local k2 = k + 1
+        if k2 > n do k2 = 1
+
+        local b = pts[k2]
+
+        local fa = nx*a.x + ny*a.y + c
+        local fb = nx*b.x + ny*b.y + c
+
+        if fa >= 0.0 then
+        (
+            append res a
+
+            if fb < 0.0 do append res (a + (b - a) * (fa / (fa - fb)))
+        )
+        else if fb >= 0.0 do
+            append res (a + (b - a) * (fa / (fa - fb)))
+    )
+
+    -- supprime les sommets confondus introduits par la coupe
+    local clean = #()
+
+    for q in res do
+    (
+        if clean.count == 0 or (length (q - clean[clean.count])) > 0.0001 do append clean q
+    )
+
+    if clean.count > 1 and (length (clean[1] - clean[clean.count])) <= 0.0001 do deleteItem clean clean.count
+
+    clean
+)
+
+-- versants d'un toit suivant le contour décalé : faîtage sur le plus long segment (direction ex),
+-- la surface est découpée en cellules PLANAIRES (une pente par cellule) par la ligne de faîtage
+-- et, pour les croupes, par les diagonales à 45° partant des extrémités du faîtage.
+-- Chaque cellule devient un prisme (FR_Prisma) ; les arêtes de coupe sont donc exactes.
+-- Footprints convexes recommandés (les formes très concaves peuvent mal se découper).
+fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat =
+(
+    local th = 0.12
+    local tanP = tan pitch
+    local wm = (wMin + wMax)/2.0
+    local h = ((wMax - wMin)/2.0) * tanP
+
+    if h > 0.05 do
+    (
+        -- coordonnées (u, w) du contour décalé dans le repère du faîtage
+        local uv = for q in pts collect [dot (q - p1) ex, dot (q - p1) inw, 0.0]
+
+        -- cellules : #(polygone (u,w), axe (1=u, 2=w), référence, signe) -> z = signe*(coord-ref)*tanP
+        local cells = #()
+
+        local lo = FR_SplitGE uv 0.0 -1.0 wm
+        local hi = FR_SplitGE uv 0.0 1.0 -wm
+
+        if hip then
+        (
+            -- côté w <= wm : découpé par les diagonales issues des extrémités du faîtage
+            local a1 = FR_SplitGE lo -1.0 1.0 (uMin - wMin)
+            local rest1 = FR_SplitGE lo 1.0 -1.0 (wMin - uMin)
+            local a2 = FR_SplitGE rest1 1.0 1.0 -(uMax + wMin)
+            local mid1 = FR_SplitGE rest1 -1.0 -1.0 (uMax + wMin)
+
+            -- côté w >= wm
+            local b1 = FR_SplitGE hi -1.0 -1.0 (uMin + wMax)
+            local rest2 = FR_SplitGE hi 1.0 1.0 -(uMin + wMax)
+            local b2 = FR_SplitGE rest2 1.0 -1.0 (wMax - uMax)
+            local mid2 = FR_SplitGE rest2 -1.0 1.0 (uMax - wMax)
+
+            cells = #(#(a1, 1, uMin, 1), #(a2, 1, uMax, -1), #(mid1, 2, wMin, 1), #(b1, 1, uMin, 1), #(b2, 1, uMax, -1), #(mid2, 2, wMax, -1))
+        )
+        else
+            cells = #(#(lo, 2, wMin, 1), #(hi, 2, wMax, -1))
+
+        for c in cells do
+        (
+            local poly = c[1]
+
+            if poly.count >= 3 do
+            (
+                local wpts = #()
+
+                for q in poly do
+                (
+                    local coord = if c[2] == 1 then q.x else q.y
+                    local z = (c[4] * (coord - c[3])) * tanP
+
+                    append wpts (p1 + ex*q.x + inw*q.y + [0,0,z])
+                )
+
+                FR_Prisma (p + "_Pente") wpts mat th
+            )
+        )
+    )
+)
+
+-- toit du contour : il part du contour DÉCALÉ vers l'extérieur (débord), avec un fond fermé
+-- (terrasse : dalle + acrotère suivant le contour ; pentes : faîtage sur le plus long segment)
 fn FR_RoofContour pts segPRs bases totalH =
 (
     local PR0 = segPRs[1]
     local roofMat = FR_Material "FRAMER_Roof" (color 122 84 66) 100
-    local wallMat = FR_Material "FRAMER_Walls" (color 214 204 188) 100
+
+    -- le toit part du contour décalé vers l'extérieur (débord), avec un fond fermé vu de dessous
+    local off = FR_OffsetContour pts PR0.roofOver
 
     if PR0.roofMode == "Flat" then
     (
-        FR_RoofSlabContour "FRAMER_Roof_Slab" pts totalH 0.2 roofMat
+        -- dalle sur le contour décalé (le dessous de la dalle ferme la vue d'en dessous)
+        FR_RoofSlabContour "FRAMER_Roof_Slab" off totalH 0.2 roofMat
 
-        -- acrotère : un bandeau par segment, prolongé jusqu'aux colonnes d'angle
+        -- acrotère : un bandeau par segment du contour décalé
         if PR0.roofPar > 0.05 do
         (
             local parT = 0.2
+            local n = off.count
 
-            for k = 1 to pts.count do
+            for k = 1 to n do
             (
-                local kL = k - 1
-                if kL < 1 do kL = pts.count
+                local k2 = k + 1
+                if k2 > n do k2 = 1
 
-                local kR = k + 1
-                if kR > pts.count do kR = 1
+                local a = off[k]
+                local b = off[k2]
 
-                local cL = amax #(segPRs[kL].pier, segPRs[k].pier, PR0.depth*2.0)
-                local cR = amax #(segPRs[k].pier, segPRs[kR].pier, PR0.depth*2.0)
+                local exE = b - a
+                exE.z = 0.0
 
-                FR_LocalBox ("FRAMER_Roof_Par_"+(k as string)) (bases[k][2]/2) (-PR0.depth/2) (totalH + PR0.roofPar/2) (bases[k][2] + (cL+cR)/2 + 0.2) parT PR0.roofPar bases[k][1] roofMat
+                if (length exE) > 0.05 do
+                (
+                    exE = normalize exE
+
+                    local inE = normalize (cross [0,0,1] exE)
+                    local bP = matrix3 exE inE [0,0,1] ((a + b)/2)
+
+                    FR_LocalBox ("FRAMER_Roof_Par_"+(k as string)) 0.0 (parT/2) (totalH + PR0.roofPar/2) ((length (b - a)) + 0.6) parT PR0.roofPar bP roofMat
+                )
             )
         )
     )
@@ -1177,8 +1399,9 @@ fn FR_RoofContour pts segPRs bases totalH =
             if bases[k][2] > bases[kLong][2] do kLong = k
         )
 
-        local ex = bases[kLong][1]
-        local inw = bases[kLong][2]
+        -- bases[k] = #(repère, largeur) : les axes ex et inw sont les LIGNES de la matrix3
+        local ex = bases[kLong][1][1]
+        local inw = bases[kLong][1][2]
         local p1 = pts[kLong]
 
         local uMin = 0.0
@@ -1186,10 +1409,10 @@ fn FR_RoofContour pts segPRs bases totalH =
         local wMin = 0.0
         local wMax = 0.0
 
-        for p in pts do
+        for q in off do
         (
-            local du = dot (p - p1) ex
-            local dw = dot (p - p1) inw
+            local du = dot (q - p1) ex
+            local dw = dot (q - p1) inw
 
             if du < uMin do uMin = du
             if du > uMax do uMax = du
@@ -1197,14 +1420,11 @@ fn FR_RoofContour pts segPRs bases totalH =
             if dw > wMax do wMax = dw
         )
 
-        local bR = matrix3 ex inw [0,0,1] (p1 + ex*uMin + inw*wMin)
-        local W = uMax - uMin
-        local D = wMax - wMin
+        -- fond fermé à la hauteur des murs (visible d'en dessous, ferme aussi le débord)
+        FR_RoofCapContour "FRAMER_Roof_Cap" off totalH roofMat
 
-        if PR0.roofMode == "Gable" then
-            FR_RoofGableRect "FRAMER_Roof" bR W D totalH PR0.roofPitch PR0.roofOver roofMat wallMat
-        else
-            FR_RoofHipRect "FRAMER_Roof" bR W D totalH PR0.roofPitch PR0.roofOver roofMat
+        -- versants suivant le contour décalé (pignons maçonnés non générés en mode contour)
+        FR_RoofSlopesContour "FRAMER_Roof" off ex inw p1 uMin uMax wMin wMax PR0.roofPitch (PR0.roofMode == "Hip") roofMat
     )
 )
 
@@ -1830,9 +2050,10 @@ fn FR_ReadContour shapeNode =
 (
     local ok = true
 
-    if shapeNode == undefined or (superclassof shapeNode) != shape then
+    -- isValidNode d'abord : un objet supprimé de la scène fait planter superclassof
+    if shapeNode == undefined or not (isValidNode shapeNode) or (superclassof shapeNode) != shape then
     (
-        FR_Msg "Le contour doit être une spline."
+        FR_Msg "Le contour doit être une spline (et exister encore dans la scène)."
         ok = false
     )
     else if (numSplines shapeNode) < 1 or (numKnots shapeNode 1) < 3 then
@@ -2420,7 +2641,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.1" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.2" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -2524,12 +2745,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.1" width:430
     label l_spRoofPitch "Pente (degrés) :" pos:[25,232] width:185 height:16
     spinner spRoofPitch "" pos:[215,230] width:190 range:[10,60,30] type:#float scale:1 tooltip:"Pente des versants (toits à deux ou quatre pans)."
     label l_spRoofOver "Débord du toit :" pos:[25,260] width:185 height:16
-    spinner spRoofOver "" pos:[215,258] width:190 range:[0,2,0.4] type:#float scale:0.05 tooltip:"Saillie du toit au-delà des murs, sur les 4 côtés."
+    spinner spRoofOver "" pos:[215,258] width:190 range:[0,2,0.4] type:#float scale:0.05 tooltip:"Saillie du toit au-delà des murs. En mode contour : le contour est décalé vers l'EXTÉRIEUR de cette valeur pour dessiner le toit (fond fermé vu de dessous)."
     label l_spRoofPar "Hauteur de l'acrotère :" pos:[25,288] width:185 height:16
     spinner spRoofPar "" pos:[215,286] width:190 range:[0,2,0.5] type:#float scale:0.05 tooltip:"Garde-corps plein autour de la terrasse (toit-terrasse uniquement)."
     label l_spRoofDepth "Profondeur du bâtiment :" pos:[25,316] width:185 height:16
     spinner spRoofDepth "" pos:[215,314] width:190 range:[2,60,8] type:#float scale:0.5 tooltip:"Profondeur couverte derrière la façade (façade simple ; en mode contour, le toit couvre tout le polygone)."
-    label lbRoofHelp "Terrasse : le polygone du contour est couvert exactement, l'acrotère suit chaque segment jusqu'aux colonnes d'angle. Deux/quatre pans : faîtage aligné sur le plus long segment, couverture du rectangle englobant (recommandé pour footprints convexes). Un toit remplace la corniche." pos:[25,350] width:380 height:48
+    label lbRoofHelp "Le toit part du contour décalé vers l'extérieur (débord), fond fermé vu de dessous. Terrasse : dalle + acrotère suivant le contour. Deux/quatre pans : faîtage sur le plus long segment, versants suivant le contour (footprints convexes recommandés ; pas de pignons maçonnés en mode contour). Un toit remplace la corniche." pos:[25,350] width:380 height:48
 
     /* ----- onglet 6 : Variation ----- */
 
@@ -3471,8 +3692,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.1" width:430
             local shp = pbCont.object
             local pts = undefined
 
-            if shp == undefined then
-                messageBox "Choisissez d'abord la spline du contour (fermée)."
+            -- la spline a pu être supprimée depuis le choix : on vérifie qu'elle existe encore
+            if shp == undefined or not (isValidNode shp) then
+            (
+                messageBox "Le contour choisi n'existe plus (ou n'a pas été choisi) : choisissez à nouveau la spline."
+                pbCont.object = undefined
+            )
             else
                 pts = FR_ReadContour shp
 
