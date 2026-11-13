@@ -1190,10 +1190,10 @@ fn FR_OffsetContour pts d =
         if (length dN) > 0.000001 do nN = normalize [dN.y, -dN.x, 0]
 
         local bis = nP + nN
-        local off
+        local oPts
 
         if (length bis) < 0.001 then
-            off = nN * d
+            oPts = nN * d
         else
         (
             bis = normalize bis
@@ -1202,10 +1202,10 @@ fn FR_OffsetContour pts d =
 
             if c < 0.3 do c = 0.3
 
-            off = bis * (d / c)
+            oPts = bis * (d / c)
         )
 
-        append out (pts[k] + off)
+        append out (pts[k] + oPts)
     )
 
     out
@@ -1353,26 +1353,26 @@ fn FR_RoofContour pts segPRs bases totalH =
     local roofMat = FR_Material "FRAMER_Roof" (color 122 84 66) 100
 
     -- le toit part du contour décalé vers l'extérieur (débord), avec un fond fermé vu de dessous
-    local off = FR_OffsetContour pts PR0.roofOver
+    local oPts = FR_OffsetContour pts PR0.roofOver
 
     if PR0.roofMode == "Flat" then
     (
         -- dalle sur le contour décalé (le dessous de la dalle ferme la vue d'en dessous)
-        FR_RoofSlabContour "FRAMER_Roof_Slab" off totalH 0.2 roofMat
+        FR_RoofSlabContour "FRAMER_Roof_Slab" oPts totalH 0.2 roofMat
 
         -- acrotère : un bandeau par segment du contour décalé
         if PR0.roofPar > 0.05 do
         (
             local parT = 0.2
-            local n = off.count
+            local n = oPts.count
 
             for k = 1 to n do
             (
                 local k2 = k + 1
                 if k2 > n do k2 = 1
 
-                local a = off[k]
-                local b = off[k2]
+                local a = oPts[k]
+                local b = oPts[k2]
 
                 local exE = b - a
                 exE.z = 0.0
@@ -1409,7 +1409,7 @@ fn FR_RoofContour pts segPRs bases totalH =
         local wMin = 0.0
         local wMax = 0.0
 
-        for q in off do
+        for q in oPts do
         (
             local du = dot (q - p1) ex
             local dw = dot (q - p1) inw
@@ -1421,10 +1421,10 @@ fn FR_RoofContour pts segPRs bases totalH =
         )
 
         -- fond fermé à la hauteur des murs (visible d'en dessous, ferme aussi le débord)
-        FR_RoofCapContour "FRAMER_Roof_Cap" off totalH roofMat
+        FR_RoofCapContour "FRAMER_Roof_Cap" oPts totalH roofMat
 
         -- versants suivant le contour décalé (pignons maçonnés non générés en mode contour)
-        FR_RoofSlopesContour "FRAMER_Roof" off ex inw p1 uMin uMax wMin wMax PR0.roofPitch (PR0.roofMode == "Hip") roofMat
+        FR_RoofSlopesContour "FRAMER_Roof" oPts ex inw p1 uMin uMax wMin wMax PR0.roofPitch (PR0.roofMode == "Hip") roofMat
     )
 )
 
