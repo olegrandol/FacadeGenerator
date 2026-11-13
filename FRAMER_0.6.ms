@@ -1,7 +1,14 @@
 /*
-    FRAMER 0.6.0
+    FRAMER 0.6.1
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.1 :
+    - TOITS (nouvel onglet Toit) : toit-terrasse avec acrotère (suit EXACTEMENT le contour,
+      polygone triangulé), toit à deux pentes (pignons) ou à quatre pans (croupes).
+      Pente, débord et hauteur d'acrotère réglables. Un toit remplace la corniche.
+      En mode contour, le faîtage des toits à pentes est aligné sur le plus long segment
+      et couvre le rectangle englobant (recommandé pour footprints convexes).
 
     NOUVEAU EN 0.6.0 :
     - CONTOUR FERMÉ : générez tout un bâtiment le long d'une spline fermée (nouveau mode
@@ -75,6 +82,7 @@ global FR_BalcCodes = #("None","Out","In","Cont")
 global FR_EntCodes = #("None","Center","Left","Right","Random")
 global FR_RailCodes = #("None","Glass","Bars","Solid")
 global FR_CapCodes = #("None","Slab","Lam")
+global FR_RoofCodes = #("None","Flat","Gable","Hip")
 
 -- valeurs par étage du mode "indépendants" (globales : un local de rollout valait OK)
 global FR_gH = #(3.0)
@@ -127,6 +135,12 @@ struct FRParams
     capMode = "None",
     capD = 0.4,
     capPct = 100.0,
+    -- toit (commun à tout le bâtiment)
+    roofMode = "None",
+    roofPitch = 30.0,
+    roofOver = 0.4,
+    roofPar = 0.5,
+    roofDepth = 8.0,
     -- un élément par étage d'élévation
     flH = #(),
     flMode = #(),
@@ -199,7 +213,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=3\n" to:ss
+    format "FRAMER_PARAMS=4\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -235,6 +249,11 @@ fn FR_ParamsToString PR =
     format "capMode=%\n" PR.capMode to:ss
     format "capD=%\n" (FR_F PR.capD) to:ss
     format "capPct=%\n" (FR_F PR.capPct) to:ss
+    format "roofMode=%\n" PR.roofMode to:ss
+    format "roofPitch=%\n" (FR_F PR.roofPitch) to:ss
+    format "roofOver=%\n" (FR_F PR.roofOver) to:ss
+    format "roofPar=%\n" (FR_F PR.roofPar) to:ss
+    format "roofDepth=%\n" (FR_F PR.roofDepth) to:ss
     format "flH=%\n" (FR_JoinF PR.flH) to:ss
     format "flMode=%\n" (FR_JoinS PR.flMode) to:ss
     format "flWin=%\n" (FR_JoinF PR.flWin) to:ss
@@ -304,6 +323,11 @@ fn FR_ParamsFromString txt =
                 "capMode": PR.capMode = v
                 "capD": PR.capD = v as float
                 "capPct": PR.capPct = v as float
+                "roofMode": PR.roofMode = v
+                "roofPitch": PR.roofPitch = v as float
+                "roofOver": PR.roofOver = v as float
+                "roofPar": PR.roofPar = v as float
+                "roofDepth": PR.roofDepth = v as float
                 "flH": PR.flH = for s in (filterString v ",") collect (s as float)
                 "flMode": PR.flMode = for s in (filterString v ",") collect s
                 "flWin": PR.flWin = for s in (filterString v ",") collect (s as float)
@@ -871,6 +895,317 @@ fn FR_Arcade p bu1 bu2 groundH T depth recess lintelH arcType fw basis frameMat 
 )
 
 /* =========================================================
+   TOIT
+========================================================= */
+
+-- point local (u le long, v profondeur, z vertical) -> monde
+fn FR_Pt basis u v z =
+(
+    basis[4] + basis[1]*u + basis[2]*v + basis[3]*z
+)
+
+-- prisme épais posé sur des points (3 ou 4) ordonnés anti-horaire vus depuis l'extérieur :
+-- extrudé de "th" le long de sa normale
+fn FR_Prisma p pts mat th =
+(
+    local n = pts.count
+    local nrm = undefined
+
+    if n >= 3 do
+    (
+        local cn = cross (pts[2]-pts[1]) (pts[n]-pts[1])
+
+        if (length cn) > 0.000001 do nrm = normalize cn
+    )
+
+    if nrm != undefined and th > 0.001 then
+    (
+        local vArr = #()
+        local fArr = #()
+
+        for k = 1 to n do append vArr pts[k]
+
+        for k = 1 to n do append vArr (pts[k] + nrm*th)
+
+        -- dessous (normale inverse)
+        for k = 1 to n-2 do append fArr [1, k+2, k+1]
+
+        -- dessus
+        for k = 1 to n-2 do append fArr [n+1, n+k+2, n+k+1]
+
+        -- côtés
+        for k = 1 to n do
+        (
+            local k2 = k + 1
+            if k2 > n do k2 = 1
+
+            append fArr [k, n+k2, n+k]
+            append fArr [k, k2, n+k2]
+        )
+
+        local m = mesh vertices:vArr faces:fArr
+
+        update m
+
+        m.name = p
+        m.material = mat
+
+        append FR_Pool m
+
+        m
+    )
+    else
+        undefined
+)
+
+-- toit-terrasse sur un rectangle (u 0..W, v 0..D dans le repère) : dalle + acrotère
+fn FR_RoofFlatRect p basis W D z0 over parH mat =
+(
+    local slabT = 0.2
+    local parT = 0.2
+
+    FR_LocalBox (p+"_Slab") (W/2) (D/2) (z0 + slabT/2) (W + over*2) (D + over*2) slabT basis mat
+
+    if parH > 0.05 do
+    (
+        FR_LocalBox (p+"_ParF") (W/2) (-over + parT/2) (z0 + parH/2) (W + over*2) parT parH basis mat
+        FR_LocalBox (p+"_ParB") (W/2) (D + over - parT/2) (z0 + parH/2) (W + over*2) parT parH basis mat
+        FR_LocalBox (p+"_ParL") (-over + parT/2) (D/2) (z0 + parH/2) parT (D + over*2) parH basis mat
+        FR_LocalBox (p+"_ParR") (W + over - parT/2) (D/2) (z0 + parH/2) parT (D + over*2) parH basis mat
+    )
+)
+
+-- toit à deux pentes sur un rectangle : faîtage au milieu de v, pignons aux extrémités u
+fn FR_RoofGableRect p basis W D z0 pitch over matRoof matWall =
+(
+    local th = 0.12
+    local u1 = -over
+    local u2 = W + over
+    local v1 = -over
+    local v2 = D + over
+    local vm = (v1 + v2)/2
+    local h = ((v2 - v1)/2) * tan pitch
+
+    if h > 0.05 do
+    (
+        -- versants (débordent sur les 4 côtés)
+        FR_Prisma (p+"_Front") #((FR_Pt basis u1 v1 z0), (FR_Pt basis u2 v1 z0), (FR_Pt basis u2 vm (z0+h)), (FR_Pt basis u1 vm (z0+h))) matRoof th
+        FR_Prisma (p+"_Back") #((FR_Pt basis u2 v2 z0), (FR_Pt basis u1 v2 z0), (FR_Pt basis u1 vm (z0+h)), (FR_Pt basis u2 vm (z0+h))) matRoof th
+
+        -- pignons (murs triangulaires aux extrémités du bâtiment)
+        FR_Prisma (p+"_GableL") #((FR_Pt basis 0.0 v1 z0), (FR_Pt basis 0.0 v2 z0), (FR_Pt basis 0.0 vm (z0+h))) matWall th
+        FR_Prisma (p+"_GableR") #((FR_Pt basis W v1 z0), (FR_Pt basis W v2 z0), (FR_Pt basis W vm (z0+h))) matWall th
+    )
+)
+
+-- toit à quatre pans sur un rectangle : faîtage raccourci (pentes égales des 4 côtés)
+fn FR_RoofHipRect p basis W D z0 pitch over matRoof =
+(
+    local th = 0.12
+    local u1 = -over
+    local u2 = W + over
+    local v1 = -over
+    local v2 = D + over
+    local vm = (v1 + v2)/2
+    local h = ((v2 - v1)/2) * tan pitch
+    local r1 = u1 + (v2 - v1)/2
+    local r2 = u2 - (v2 - v1)/2
+
+    if h > 0.05 and r2 > r1 do
+    (
+        FR_Prisma (p+"_Front") #((FR_Pt basis u1 v1 z0), (FR_Pt basis u2 v1 z0), (FR_Pt basis r2 vm (z0+h)), (FR_Pt basis r1 vm (z0+h))) matRoof th
+        FR_Prisma (p+"_Back") #((FR_Pt basis u2 v2 z0), (FR_Pt basis u1 v2 z0), (FR_Pt basis r1 vm (z0+h)), (FR_Pt basis r2 vm (z0+h))) matRoof th
+        FR_Prisma (p+"_HipL") #((FR_Pt basis u1 v2 z0), (FR_Pt basis u1 v1 z0), (FR_Pt basis r1 vm (z0+h))) matRoof th
+        FR_Prisma (p+"_HipR") #((FR_Pt basis u2 v1 z0), (FR_Pt basis u2 v2 z0), (FR_Pt basis r2 vm (z0+h))) matRoof th
+    )
+)
+
+-- point strictement dans le triangle abc (test par les signes, plan XY)
+fn FR_InTri p a b c =
+(
+    local d1 = cross (b-a) (p-a)
+    local d2 = cross (c-b) (p-b)
+    local d3 = cross (a-c) (p-c)
+
+    ((d1.z >= 0.0) and (d2.z >= 0.0) and (d3.z >= 0.0)) or ((d1.z <= 0.0) and (d2.z <= 0.0) and (d3.z <= 0.0))
+)
+
+-- triangulation d'un polygone planaire (découpe d'oreilles, contour anti-horaire)
+fn FR_Triangulate pts =
+(
+    local tris = #()
+
+    if pts.count >= 3 do
+    (
+        local rest = for k = 1 to pts.count collect k
+        local stuck = false
+        local guard = 0
+
+        while rest.count > 2 and guard < 2000 and not stuck do
+        (
+            guard = guard + 1
+            local clipped = false
+
+            for k = 1 to rest.count while not clipped do
+            (
+                local k2 = k + 1
+                if k2 > rest.count do k2 = 1
+
+                local k3 = k2 + 1
+                if k3 > rest.count do k3 = 1
+
+                local a = rest[k]
+                local b = rest[k2]
+                local c = rest[k3]
+
+                -- une oreille est un sommet convexe (cross z > 0 en anti-horaire)
+                if (cross (pts[b]-pts[a]) (pts[c]-pts[b])).z > 0.000001 do
+                (
+                    local empty = true
+
+                    for m in rest while empty do
+                    (
+                        if m != a and m != b and m != c and (FR_InTri pts[m] pts[a] pts[b] pts[c]) do empty = false
+                    )
+
+                    if empty do
+                    (
+                        append tris #(a, b, c)
+                        deleteItem rest k
+                        clipped = true
+                    )
+                )
+            )
+
+            if not clipped do stuck = true
+        )
+    )
+
+    tris
+)
+
+-- dalle de la terrasse sur le contour : polygone triangulé (dessus, dessous, tranche)
+fn FR_RoofSlabContour p pts z0 th mat =
+(
+    local tris = FR_Triangulate pts
+
+    if tris.count > 0 do
+    (
+        local n = pts.count
+        local vArr = #()
+        local fArr = #()
+
+        for k = 1 to n do
+        (
+            append vArr [pts[k].x, pts[k].y, z0]
+            append vArr [pts[k].x, pts[k].y, z0 + th]
+        )
+
+        for t in tris do
+        (
+            local a = t[1]
+            local b = t[2]
+            local c = t[3]
+
+            append fArr [a, c, b]
+            append fArr [a+n, b+n, c+n]
+        )
+
+        for k = 1 to n do
+        (
+            local k2 = k + 1
+            if k2 > n do k2 = 1
+
+            append fArr [k, k2, k2+n]
+            append fArr [k, k2+n, k+n]
+        )
+
+        local m = mesh vertices:vArr faces:fArr
+
+        update m
+
+        m.name = p
+        m.material = mat
+
+        append FR_Pool m
+
+        m
+    )
+)
+
+-- toit du contour : terrasse (polygone exact) ou pentes (rectangle englobant, faîtage sur le plus long segment)
+fn FR_RoofContour pts segPRs bases totalH =
+(
+    local PR0 = segPRs[1]
+    local roofMat = FR_Material "FRAMER_Roof" (color 122 84 66) 100
+    local wallMat = FR_Material "FRAMER_Walls" (color 214 204 188) 100
+
+    if PR0.roofMode == "Flat" then
+    (
+        FR_RoofSlabContour "FRAMER_Roof_Slab" pts totalH 0.2 roofMat
+
+        -- acrotère : un bandeau par segment, prolongé jusqu'aux colonnes d'angle
+        if PR0.roofPar > 0.05 do
+        (
+            local parT = 0.2
+
+            for k = 1 to pts.count do
+            (
+                local kL = k - 1
+                if kL < 1 do kL = pts.count
+
+                local kR = k + 1
+                if kR > pts.count do kR = 1
+
+                local cL = amax #(segPRs[kL].pier, segPRs[k].pier, PR0.depth*2.0)
+                local cR = amax #(segPRs[k].pier, segPRs[kR].pier, PR0.depth*2.0)
+
+                FR_LocalBox ("FRAMER_Roof_Par_"+(k as string)) (bases[k][2]/2) (-PR0.depth/2) (totalH + PR0.roofPar/2) (bases[k][2] + (cL+cR)/2 + 0.2) parT PR0.roofPar bases[k][1] roofMat
+            )
+        )
+    )
+    else if PR0.roofMode == "Gable" or PR0.roofMode == "Hip" then
+    (
+        -- le plus long segment donne la direction du faîtage
+        local kLong = 1
+
+        for k = 2 to pts.count do
+        (
+            if bases[k][2] > bases[kLong][2] do kLong = k
+        )
+
+        local ex = bases[kLong][1]
+        local inw = bases[kLong][2]
+        local p1 = pts[kLong]
+
+        local uMin = 0.0
+        local uMax = 0.0
+        local wMin = 0.0
+        local wMax = 0.0
+
+        for p in pts do
+        (
+            local du = dot (p - p1) ex
+            local dw = dot (p - p1) inw
+
+            if du < uMin do uMin = du
+            if du > uMax do uMax = du
+            if dw < wMin do wMin = dw
+            if dw > wMax do wMax = dw
+        )
+
+        local bR = matrix3 ex inw [0,0,1] (p1 + ex*uMin + inw*wMin)
+        local W = uMax - uMin
+        local D = wMax - wMin
+
+        if PR0.roofMode == "Gable" then
+            FR_RoofGableRect "FRAMER_Roof" bR W D totalH PR0.roofPitch PR0.roofOver roofMat wallMat
+        else
+            FR_RoofHipRect "FRAMER_Roof" bR W D totalH PR0.roofPitch PR0.roofOver roofMat
+    )
+)
+
+/* =========================================================
    FUSION : un editable poly par matériau. Renvoie les objets finaux.
 ========================================================= */
 
@@ -1286,15 +1621,34 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
 
     FR_LocalBox ("FRAMER_Band_"+((floors+1) as string)) (width/2) (-depth/2) (totalH-bandH/2) (width+endM*2) depth bandH basis frameMat
 
-    /* ---------- corniche ---------- */
+    /* ---------- corniche (sans objet si un toit la remplace) ---------- */
 
-    if PR.cornice do
+    if PR.cornice and PR.roofMode == "None" do
     (
         local ch = 0.25
         local outer = -depth - 0.2
         local inner = 0.0
 
         FR_LocalBox "FRAMER_Cornice" (width/2) ((outer+inner)/2) (totalH+ch/2) (width+0.3+endM*2) (inner-outer) ch basis pierMat
+    )
+
+    /* ---------- toit (façade simple : couvre la façade et s'étend derrière) ---------- */
+
+    if PR.roofMode != "None" do
+    (
+        local roofMat = FR_Material "FRAMER_Roof" (color 122 84 66) 100
+
+        -- rectangle couvert : du plan des piliers (v = -depth) vers l'arrière (roofDepth)
+        local bR = matrix3 basis[1] basis[2] basis[3] (basis[4] + basis[2]*(-depth))
+        local W = width + endM*2
+        local D = depth + PR.roofDepth
+
+        if PR.roofMode == "Flat" then
+            FR_RoofFlatRect "FRAMER_Roof" bR W D totalH PR.roofOver PR.roofPar roofMat
+        else if PR.roofMode == "Gable" then
+            FR_RoofGableRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat pierMat
+        else if PR.roofMode == "Hip" do
+            FR_RoofHipRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat
     )
 
     true
@@ -1622,6 +1976,9 @@ fn FR_BuildContour pts segPRs root doMerge =
                 FR_Box ("FRAMER_Corner_"+(k as string)) [pts[k].x, pts[k].y, totalH/2] (matrix3 1) cS cS totalH pierMat
             )
         )
+
+        -- toit du contour (terrasse : polygone exact ; pentes : rectangle englobant)
+        if ok and PR0.roofMode != "None" do FR_RoofContour pts segPRs bases totalH
 
         if ok do
         (
@@ -2060,7 +2417,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.1" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -2073,7 +2430,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
     label lbEdit "Nouvelle façade : réglez puis cliquez sur Générer." pos:[25,70] width:390 height:18
     checkbox cbLive "Mise à jour en direct (mode édition)" pos:[25,92] checked:false tooltip:"Applique chaque réglage tout de suite à la façade sélectionnée."
 
-    radioButtons rbTab labels:#("Général","Étages","Rez-de-ch.","Fenêtres","Variation","Moulures") columns:6 default:1 pos:[18,132] tooltip:"Changer de page de réglages."
+    radioButtons rbTab labels:#("Général","Étages","Rez-de-ch.","Fenêtres","Toit","Variation","Moulures") columns:7 default:1 pos:[18,132] tooltip:"Changer de page de réglages."
 
     /* ----- onglet 1 : Général ----- */
 
@@ -2157,7 +2514,21 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
     label l_spCapPct "Probabilité (% des fenêtres) :" pos:[25,506] width:185 height:16
     spinner spCapPct "" pos:[215,504] width:190 range:[0,100,100] type:#float scale:1 tooltip:"100 % : toutes les fenêtres. Sinon, tirage au hasard par travée."
 
-    /* ----- onglet 5 : Variation ----- */
+    /* ----- onglet 5 : Toit ----- */
+
+    groupBox gbRoof "Toit" pos:[10,160] width:410 height:250
+    dropdownList ddRoof "Type de toit :" pos:[25,182] width:380 items:#("Aucun","Terrasse + acrotère","Deux pentes (pignons)","Quatre pans (croupes)") selection:1 tooltip:"Aucun : façade nue. Terrasse : dalle + acrotère (remplace la corniche). Deux ou quatre pans : toiture en pente."
+    label l_spRoofPitch "Pente (degrés) :" pos:[25,232] width:185 height:16
+    spinner spRoofPitch "" pos:[215,230] width:190 range:[10,60,30] type:#float scale:1 tooltip:"Pente des versants (toits à deux ou quatre pans)."
+    label l_spRoofOver "Débord du toit :" pos:[25,260] width:185 height:16
+    spinner spRoofOver "" pos:[215,258] width:190 range:[0,2,0.4] type:#float scale:0.05 tooltip:"Saillie du toit au-delà des murs, sur les 4 côtés."
+    label l_spRoofPar "Hauteur de l'acrotère :" pos:[25,288] width:185 height:16
+    spinner spRoofPar "" pos:[215,286] width:190 range:[0,2,0.5] type:#float scale:0.05 tooltip:"Garde-corps plein autour de la terrasse (toit-terrasse uniquement)."
+    label l_spRoofDepth "Profondeur du bâtiment :" pos:[25,316] width:185 height:16
+    spinner spRoofDepth "" pos:[215,314] width:190 range:[2,60,8] type:#float scale:0.5 tooltip:"Profondeur couverte derrière la façade (façade simple ; en mode contour, le toit couvre tout le polygone)."
+    label lbRoofHelp "Terrasse : le polygone du contour est couvert exactement, l'acrotère suit chaque segment jusqu'aux colonnes d'angle. Deux/quatre pans : faîtage aligné sur le plus long segment, couverture du rectangle englobant (recommandé pour footprints convexes). Un toit remplace la corniche." pos:[25,350] width:380 height:48
+
+    /* ----- onglet 6 : Variation ----- */
 
     groupBox gb6 "Variation aléatoire" pos:[10,160] width:410 height:215
     label l_spSeed "Graine :" pos:[25,187] width:185 height:16
@@ -2172,7 +2543,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
     checkbox cbWall "Autoriser les travées en mur plein" pos:[25,312] checked:false tooltip:"Certaines travées deviennent des murs pleins."
     label lbVarHelp "Même graine = même façade. Les variantes ne touchent que les étages de type Fenêtres. NB : les tirages de volets et casquettes décalent le hasard par rapport aux versions 0.5.x." pos:[25,340] width:380 height:30
 
-    /* ----- onglet 6 : Guides et moulures ----- */
+    /* ----- onglet 7 : Guides et moulures ----- */
 
     groupBox gb8 "Guides d'étages et moulures / lisses" pos:[10,160] width:410 height:300
     button btGuides "Créer les guides d'étages (façade sélectionnée)" pos:[25,184] width:380 height:24 tooltip:"Crée une ligne éditable à chaque niveau de la façade sélectionnée (pour un contour : une ligne par segment et par niveau)."
@@ -2210,6 +2581,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
         local t4 = (n == 4)
         local t5 = (n == 5)
         local t6 = (n == 6)
+        local t7 = (n == 7)
 
         gb1.visible = t1
         rbMode.visible = t1
@@ -2284,30 +2656,42 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
         l_spCapPct.visible = t4
         spCapPct.visible = t4
 
-        gb6.visible = t5
-        l_spSeed.visible = t5
-        spSeed.visible = t5
-        btRoll.visible = t5
-        l_spVar.visible = t5
-        spVar.visible = t5
-        l_spWidthVar.visible = t5
-        spWidthVar.visible = t5
-        cbWide.visible = t5
-        cbBalcony.visible = t5
-        cbWall.visible = t5
-        lbVarHelp.visible = t5
+        gbRoof.visible = t5
+        ddRoof.visible = t5
+        l_spRoofPitch.visible = t5
+        spRoofPitch.visible = t5
+        l_spRoofOver.visible = t5
+        spRoofOver.visible = t5
+        l_spRoofPar.visible = t5
+        spRoofPar.visible = t5
+        l_spRoofDepth.visible = t5
+        spRoofDepth.visible = t5
+        lbRoofHelp.visible = t5
 
-        gb8.visible = t6
-        btGuides.visible = t6
-        btProfile.visible = t6
-        pbProf.visible = t6
-        l_spMoldScale.visible = t6
-        spMoldScale.visible = t6
-        l_spMoldZ.visible = t6
-        spMoldZ.visible = t6
-        cbMoldFlip.visible = t6
-        btMold.visible = t6
-        lbMoldHelp.visible = t6
+        gb6.visible = t6
+        l_spSeed.visible = t6
+        spSeed.visible = t6
+        btRoll.visible = t6
+        l_spVar.visible = t6
+        spVar.visible = t6
+        l_spWidthVar.visible = t6
+        spWidthVar.visible = t6
+        cbWide.visible = t6
+        cbBalcony.visible = t6
+        cbWall.visible = t6
+        lbVarHelp.visible = t6
+
+        gb8.visible = t7
+        btGuides.visible = t7
+        btProfile.visible = t7
+        pbProf.visible = t7
+        l_spMoldScale.visible = t7
+        spMoldScale.visible = t7
+        l_spMoldZ.visible = t7
+        spMoldZ.visible = t7
+        cbMoldFlip.visible = t7
+        btMold.visible = t7
+        lbMoldHelp.visible = t7
 
     )
 
@@ -2401,6 +2785,19 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
         l_spArcL.enabled = gal
     )
 
+    -- la pente ne sert qu'aux toits à pentes, l'acrotère qu'à la terrasse
+    fn UpdateRoofUI =
+    (
+        local r = FR_RoofCodes[ddRoof.selection]
+        local flat = (r == "Flat")
+        local sloped = (r == "Gable" or r == "Hip")
+
+        spRoofPitch.enabled = sloped
+        l_spRoofPitch.enabled = sloped
+        spRoofPar.enabled = flat
+        l_spRoofPar.enabled = flat
+    )
+
     /* ----- interface <-> paramètres ----- */
 
     fn FR_ReadUI =
@@ -2430,6 +2827,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
         PR.capMode = FR_CapCodes[ddCap.selection]
         PR.capD = spCapD.value
         PR.capPct = spCapPct.value
+
+        PR.roofMode = FR_RoofCodes[ddRoof.selection]
+        PR.roofPitch = spRoofPitch.value
+        PR.roofOver = spRoofOver.value
+        PR.roofPar = spRoofPar.value
+        PR.roofDepth = spRoofDepth.value
 
         PR.seedVal = spSeed.value
         PR.variation = spVar.value
@@ -2523,6 +2926,15 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
         ddCap.selection = ci
         spCapD.value = PR.capD
         spCapPct.value = PR.capPct
+
+        local roi = findItem FR_RoofCodes PR.roofMode
+        if roi == 0 do roi = 1
+        ddRoof.selection = roi
+        spRoofPitch.value = PR.roofPitch
+        spRoofOver.value = PR.roofOver
+        spRoofPar.value = PR.roofPar
+        spRoofDepth.value = PR.roofDepth
+        UpdateRoofUI()
 
         -- valeurs "anciennes façades" : serviront à compléter les tableaux manquants
         spUpper.value = PR.upperH
@@ -2662,6 +3074,11 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
             local vCapK = FR_CSegs[FR_CurSeg].capMode
             local vCapD = FR_CSegs[FR_CurSeg].capD
             local vCapP = FR_CSegs[FR_CurSeg].capPct
+            local vRoofK = FR_CSegs[FR_CurSeg].roofMode
+            local vRoofP = FR_CSegs[FR_CurSeg].roofPitch
+            local vRoofO = FR_CSegs[FR_CurSeg].roofOver
+            local vRoofPar = FR_CSegs[FR_CurSeg].roofPar
+            local vRoofD = FR_CSegs[FR_CurSeg].roofDepth
 
             for k = 1 to FR_CSegs.count do
             (
@@ -2692,6 +3109,11 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
                     FR_CSegs[k].capMode = vCapK
                     FR_CSegs[k].capD = vCapD
                     FR_CSegs[k].capPct = vCapP
+                    FR_CSegs[k].roofMode = vRoofK
+                    FR_CSegs[k].roofPitch = vRoofP
+                    FR_CSegs[k].roofOver = vRoofO
+                    FR_CSegs[k].roofPar = vRoofPar
+                    FR_CSegs[k].roofDepth = vRoofD
                 )
             )
 
@@ -2840,6 +3262,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
         SetTab 1
         SetWorkMode 1
         UpdateArcUI()
+        UpdateRoofUI()
     )
 
     on FRAMER_UI close do callbacks.removeScripts id:#FRAMER_SEL
@@ -3092,6 +3515,11 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
                     PRk.capMode = PR1.capMode
                     PRk.capD = PR1.capD
                     PRk.capPct = PR1.capPct
+                    PRk.roofMode = PR1.roofMode
+                    PRk.roofPitch = PR1.roofPitch
+                    PRk.roofOver = PR1.roofOver
+                    PRk.roofPar = PR1.roofPar
+                    PRk.roofDepth = PR1.roofDepth
 
                     -- horizontal : recalculé pour ce segment (même pas de travée)
                     PRk.width = widths[k]
@@ -3345,6 +3773,21 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.0" width:430
     )
 
     on ddArc selected i do FR_LiveTick()
+
+    on ddRoof selected i do
+    (
+        UpdateRoofUI()
+        FR_LiveTick()
+    )
+
+    on spRoofPitch buttonup do FR_LiveTick()
+    on spRoofPitch entered do FR_LiveTick()
+    on spRoofOver buttonup do FR_LiveTick()
+    on spRoofOver entered do FR_LiveTick()
+    on spRoofPar buttonup do FR_LiveTick()
+    on spRoofPar entered do FR_LiveTick()
+    on spRoofDepth buttonup do FR_LiveTick()
+    on spRoofDepth entered do FR_LiveTick()
 )
 
 /* =========================================================

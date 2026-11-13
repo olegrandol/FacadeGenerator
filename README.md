@@ -11,8 +11,11 @@ guides d'étages et moulures balayées).
 2. Dans 3ds Max : menu *Scripting > Run Script…* et choisir le fichier.
 3. La fenêtre FRAMER s'ouvre (mode création / mode édition).
 
-## Version 0.6.0
+## Version 0.6.1
 
+- **Toits** (onglet Toit) : toit-terrasse avec acrotère (suit exactement le contour,
+  polygone triangulé), toit à deux pentes (pignons) ou à quatre pans (croupes).
+  Pente, débord et hauteur d'acrotère réglables. Un toit remplace la corniche.
 - **Contour fermé** : dessiner une spline fermée (vue de dessus), la sélectionner,
   et générer une façade qui suit tout le contour. Chaque segment peut recevoir un
   style différent (côté rue, côté jardin, pignon…) via le sélecteur de segment ;
