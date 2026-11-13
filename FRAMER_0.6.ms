@@ -1,7 +1,18 @@
 /*
-    FRAMER 0.6.2
+    FRAMER 0.6.3
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.3 :
+    - PRESETS : sauvegardez vos réglages et rechargez-les à tout moment (groupe
+      "Presets" en bas de la fenêtre). Tapez un nom, cliquez Sauver ; le preset
+      apparaît dans la liste, cliquez Charger pour rappeler tous les réglages
+      (travées, rez-de-chaussée, étages, fenêtres, toit, variation...).
+      Suppr. efface le preset sélectionné. Les presets sont des fichiers .framer
+      stockés dans le dossier de configuration de 3ds Max
+      (plugcfg\FRAMER\presets) : on peut les copier, renommer ou partager.
+      En mode contour, un preset s'applique au segment affiché (utilisez ensuite
+      "Appliquer ce segment à tous" si besoin).
 
     NOUVEAU EN 0.6.2 :
     - TOIT SUR CONTOUR : le toit part du contour DÉCALÉ vers l'extérieur (valeur du débord,
@@ -2634,6 +2645,35 @@ fn FR_DoMoulding profNode sc dz flip =
     )
 )
 
+/* ----- presets : fichiers de réglages dans plugcfg\FRAMER\presets ----- */
+
+fn FR_PresetDir =
+(
+    local d = (getDir #plugcfg) + "\\FRAMER\\presets"
+
+    if not doesFileExist d do makeDir d all:true
+
+    d
+)
+
+fn FR_PresetCleanName nm =
+(
+    local bad = "\\\\/*:?\"<>|"
+    local out = ""
+
+    for c in (trimLeft (trimRight nm)) do
+        out += if (findString bad c) == undefined then c else "_"
+
+    out
+)
+
+fn FR_PresetFile nm = (FR_PresetDir()) + "\\" + nm + ".framer"
+
+fn FR_PresetNames =
+(
+    sort (for f in getFiles ((FR_PresetDir()) + "\\*.framer") collect (getFilenameFile f))
+)
+
 -- filtre des pickbuttons de splines
 fn FR_ShapeFilter o = (superclassof o == shape)
 
@@ -2641,7 +2681,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.2" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.3" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -2793,8 +2833,17 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.2" width:430
     spinner spSeg "" pos:[130,670] width:80 range:[1,1,1] type:#integer tooltip:"Segment du contour dont vous modifiez les réglages (côté rue, côté jardin...)." enabled:false
     button btCopySeg "Appliquer ce segment à tous" pos:[230,668] width:190 height:22 tooltip:"Copie les réglages horizontaux du segment affiché sur tous les autres segments." enabled:false
 
-    label lbInfo "Mode création." pos:[15,698] width:400 height:30
-    label lbLegend "F fenêtre | P porte-fenêtre | B balcon | M mur plein" pos:[15,732] width:400 height:16
+    /* ----- presets ----- */
+
+    groupBox gbPreset "Presets (réglages sauvegardés)" pos:[10,756] width:410 height:92
+    dropdownList ddPreset "" pos:[25,776] width:380 items:#() tooltip:"Presets enregistrés. Sélectionnez-en un puis cliquez Charger."
+    edittext etPresetName "Nom :" pos:[25,806] width:170 height:20 tooltip:"Nom du preset à sauvegarder (ou à charger s'il existe déjà)."
+    button btPresetSave "Sauver" pos:[205,804] width:62 height:22 tooltip:"Sauvegarde tous les réglages affichés sous le nom saisi."
+    button btPresetLoad "Charger" pos:[271,804] width:62 height:22 tooltip:"Charge le preset sélectionné dans la liste (ou celui dont le nom est saisi)."
+    button btPresetDel "Suppr." pos:[337,804] width:62 height:22 tooltip:"Supprime le preset sélectionné dans la liste (ou celui dont le nom est saisi)."
+
+    label lbInfo "Mode création." pos:[15,856] width:400 height:30
+    label lbLegend "F fenêtre | P porte-fenêtre | B balcon | M mur plein" pos:[15,890] width:400 height:16
 
     -- affiche les contrôles de l'onglet n et cache les autres
     fn SetTab n =
@@ -3489,6 +3538,106 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.2" width:430
         )
     )
 
+    /* ----- événements : presets ----- */
+
+    fn FR_RefreshPresets =
+    (
+        local names = FR_PresetNames()
+        local sel = ddPreset.selected
+
+        ddPreset.items = names
+        ddPreset.selected = (if sel <= names.count then sel else 0)
+    )
+
+    fn FR_PresetApply nm =
+    (
+        local f = FR_PresetFile nm
+
+        if not doesFileExist f then
+            messageBox ("Preset introuvable : " + nm)
+        else
+        (
+            local ss = stringstream ""
+            local ff = openFile f
+
+            if ff != undefined do
+            (
+                while not eof ff do append ss ((readLine ff) + "\n")
+                close ff
+            )
+
+            FR_WriteUI (FR_ParamsFromString (ss as string))
+            lbInfo.text = "Preset chargé : " + nm
+
+            if cbLive.checked and cbLive.enabled do FR_LiveTick()
+        )
+    )
+
+    fn FR_PresetWrite nm =
+    (
+        local clean = FR_PresetCleanName nm
+
+        if clean == "" then
+            messageBox "Donnez un nom au preset (champ Nom)."
+        else
+        (
+            local f = createFile (FR_PresetFile clean)
+
+            if f == undefined then
+                messageBox ("Impossible de créer le preset : " + clean)
+            else
+            (
+                format "%" (FR_ParamsToString (FR_ReadUI())) to:f
+                close f
+
+                FR_RefreshPresets()
+                ddPreset.selected = findItem ddPreset.items clean
+                etPresetName.text = clean
+                lbInfo.text = "Preset sauvegardé : " + clean
+            )
+        )
+    )
+
+    on ddPreset selected i do
+    (
+        if i > 0 and i <= ddPreset.items.count do FR_PresetApply ddPreset.items[i]
+    )
+
+    on btPresetSave pressed do FR_PresetWrite etPresetName.text
+
+    on btPresetLoad pressed do
+    (
+        if ddPreset.selected > 0 then
+            FR_PresetApply ddPreset.items[ddPreset.selected]
+        else if (FR_PresetCleanName etPresetName.text) != "" then
+            FR_PresetApply (FR_PresetCleanName etPresetName.text)
+        else
+            messageBox "Choisissez un preset dans la liste (ou tapez son nom)."
+    )
+
+    on btPresetDel pressed do
+    (
+        local nm = if ddPreset.selected > 0 then ddPreset.items[ddPreset.selected]
+                   else (FR_PresetCleanName etPresetName.text)
+
+        if nm == "" then
+            messageBox "Choisissez le preset à supprimer dans la liste."
+        else
+        (
+            local f = FR_PresetFile nm
+
+            if not doesFileExist f then
+                messageBox ("Preset introuvable : " + nm)
+            else
+            (
+                deleteFile f
+                FR_RefreshPresets()
+                etPresetName.text = ""
+                lbInfo.text = "Preset supprimé : " + nm
+            )
+        )
+    )
+
     /* ----- événements : mode, étages ----- */
 
     on rbWork changed state do SetWorkMode state
@@ -3503,6 +3652,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.2" width:430
         SetWorkMode 1
         UpdateArcUI()
         UpdateRoofUI()
+        FR_RefreshPresets()
     )
 
     on FRAMER_UI close do callbacks.removeScripts id:#FRAMER_SEL

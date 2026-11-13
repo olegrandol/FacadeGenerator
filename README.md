@@ -11,6 +11,16 @@ guides d'étages et moulures balayées).
 2. Dans 3ds Max : menu *Scripting > Run Script…* et choisir le fichier.
 3. La fenêtre FRAMER s'ouvre (mode création / mode édition).
 
+## Version 0.6.3
+
+- **Presets** : sauvegarde et rechargement des réglages de la fenêtre (travées,
+  rez-de-chaussée, étages, fenêtres, toit, variation…). Tapez un nom, cliquez
+  *Sauver* ; le preset apparaît dans la liste, *Charger* le rappelle, *Suppr.*
+  l'efface. Les presets sont des fichiers `.framer` dans le dossier de
+  configuration de 3ds Max (`plugcfg\FRAMER\presets`) : copiables, renommables,
+  partageables. En mode contour, un preset s'applique au segment affiché
+  (utilisez ensuite « Appliquer ce segment à tous » si besoin).
+
 ## Version 0.6.2
 
 - **Toit sur contour retravaillé** : le toit part désormais du contour **décalé vers
