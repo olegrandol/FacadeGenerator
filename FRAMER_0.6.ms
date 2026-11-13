@@ -4,6 +4,9 @@
     Autodesk 3ds Max 2026
 
     NOUVEAU EN 0.6.1 :
+    - MÉMOIRE : la mise à jour EN DIRECT ne crée plus d'entrée d'annulation (undo) :
+      avant, chaque réglage empilait une façade complète en RAM jusqu'au plantage
+      "Out of memory". Les mises à jour manuelles restent annulables (Ctrl+Z).
     - TOITS (nouvel onglet Toit) : toit-terrasse avec acrotère (suit EXACTEMENT le contour,
       polygone triangulé), toit à deux pentes (pignons) ou à quatre pans (croupes).
       Pente, débord et hauteur d'acrotère réglables. Un toit remplace la corniche.
@@ -3121,10 +3124,15 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.1" width:430
 
             local ok = false
 
-            undo "Mise à jour façade FRAMER" on
-            (
+            -- en direct (silent) : PAS d'undo, sinon chaque réglage empile une façade
+            -- complète en mémoire jusqu'au débordement
+            if silent then
                 ok = FR_BuildContour FR_CPts FR_CSegs root cbMerge.checked
-            )
+            else
+                undo "Mise à jour façade FRAMER" on
+                (
+                    ok = FR_BuildContour FR_CPts FR_CSegs root cbMerge.checked
+                )
 
             if ok == true do
             (
@@ -3159,10 +3167,15 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.1" width:430
             (
                 local ok = false
 
-                undo "Mise à jour façade FRAMER" on
-                (
+                -- en direct (silent) : PAS d'undo, sinon chaque réglage empile une façade
+                -- complète en mémoire jusqu'au débordement
+                if silent then
                     ok = FR_Build PR root cbMerge.checked
-                )
+                else
+                    undo "Mise à jour façade FRAMER" on
+                    (
+                        ok = FR_Build PR root cbMerge.checked
+                    )
 
                 if ok == true then
                 (
@@ -3178,7 +3191,13 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.1" width:430
 
     fn FR_LiveTick =
     (
-        if cbLive.checked do FR_DoUpdate true
+        if cbLive.checked do
+        (
+            FR_DoUpdate true
+
+            -- libère le tas MAXScript après chaque reconstruction en direct
+            gc light:true
+        )
     )
 
     /* ----- mode création / édition ----- */
