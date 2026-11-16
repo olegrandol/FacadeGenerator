@@ -3546,14 +3546,17 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
             if FR_gH[k] != FR_gH[1] or FR_gMode[k] != FR_gMode[1] or FR_gWin[k] != FR_gWin[1] or FR_gHt[k] != FR_gHt[1] or FR_gSill[k] != FR_gSill[1] or FR_gBalc[k] != FR_gBalc[1] do same = false
         )
 
+        -- IMPORTANT : flCustom AVANT rbFloors.state — affecter .state déclenche le
+        -- handler « on rbFloors changed », qui fait StoreAll() si flCustom est false
+        -- et écraserait les valeurs par étage du preset (balcon du 1er étage, etc.)
+        flCustom = not same
+        spFloorSel.enabled = not same
+        btCopyAll.enabled = not same
+
         if same then
             rbFloors.state = 1
         else
             rbFloors.state = 2
-
-        flCustom = not same
-        spFloorSel.enabled = not same
-        btCopyAll.enabled = not same
 
         curFloor = 1
         spFloorSel.range = [1, spFloors.value, 1]
