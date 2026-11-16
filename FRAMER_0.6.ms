@@ -3119,7 +3119,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     /* ----- presets ----- */
 
     groupBox gbPreset "Presets (réglages sauvegardés)" pos:[10,756] width:410 height:92
-    dropdownList ddPreset "" pos:[25,776] width:380 items:#() tooltip:"Presets enregistrés. Sélectionnez-en un puis cliquez Charger."
+    dropdownList ddPreset "" pos:[25,776] width:348 items:#() tooltip:"Presets enregistrés. Sélectionnez-en un puis cliquez Charger."
+    button btPresetRefresh "↻" pos:[378,774] width:28 height:22 tooltip:"Réactualise la liste des presets et affiche le dossier utilisé dans la barre d'infos."
     edittext etPresetName "Nom :" pos:[25,806] width:170 height:20 tooltip:"Nom du preset à sauvegarder (ou à charger s'il existe déjà)."
     button btPresetSave "Sauver" pos:[205,804] width:62 height:22 tooltip:"Sauvegarde tous les réglages affichés sous le nom saisi."
     button btPresetLoad "Charger" pos:[271,804] width:62 height:22 tooltip:"Charge le preset sélectionné dans la liste (ou celui dont le nom est saisi)."
@@ -3860,7 +3861,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         local f = FR_PresetFile nm
 
         if not doesFileExist f then
-            messageBox ("Preset introuvable : " + nm)
+            messageBox ("Preset introuvable : " + nm + "\n\nDossier attendu : " + (FR_PresetDir()))
         else
         (
             local ss = stringstream ""
@@ -3911,6 +3912,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
 
     on btPresetSave pressed do FR_PresetWrite etPresetName.text
 
+    on btPresetRefresh pressed do
+    (
+        FR_RefreshPresets()
+        lbInfo.text = "Dossier presets : " + (FR_PresetDir())
+    )
+
     on btPresetLoad pressed do
     (
         local sel = ddPreset.selected
@@ -3922,7 +3929,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         else if (FR_PresetCleanName etPresetName.text) != "" then
             FR_PresetApply (FR_PresetCleanName etPresetName.text)
         else
-            messageBox "Choisissez un preset dans la liste (ou tapez son nom)."
+            messageBox ("Choisissez un preset dans la liste (ou tapez son nom).\n\nDossier des presets : " + (FR_PresetDir()) + "\n\nCliquez ↻ pour réactualiser la liste après y avoir copié un fichier .framer.")
     )
 
     on btPresetDel pressed do
