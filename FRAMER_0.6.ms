@@ -4,6 +4,17 @@
     Autodesk 3ds Max 2026
 
     CORRIGÉ EN 0.6.4 :
+    - ÉCHELLE DES FENÊTRES DU RDC MAISON DE VILLE : fenêtres à 1,40 m de large
+      × 1,20 m de haut, allège à 0,90 m (taille d'une fenêtre de maison de
+      ville classique ; avant, elles étaient trop grandes).
+    - HAUTEUR DES PORTES : toutes les portes ont maintenant LA MÊME HAUTEUR
+      (seule la largeur varie), réglée par « Hauteur des portes » de l'onglet
+      Rez-de-chaussée (2,05 m minimum pour une maison de ville, 3,00 m pour un
+      magasin ou un grand immeuble ; l'auto-réglage suit le choix du type de
+      rez-de-chaussée). Avant, les portes « Porte + vitrage » montaient jusqu'au
+      bandeau (pleine hauteur du rdc) et la travée d'entrée était bridée à 2,40 m.
+      Au-dessus des portes « Porte + vitrage », une imposte vitrée ferme le reste
+      de la hauteur.
     - VOLETS BATTANTS : ils débordaient au-dessus des fenêtres (la hauteur
       absolue du haut de fenêtre était passée comme hauteur de volet) — aux
       étages comme au rez-de-chaussée.
@@ -181,6 +192,7 @@ struct FRParams
     allowWall = false,
     entrance = "Center",
     entranceFactor = 1.6,
+    doorH = 3.0,
     cornice = true,
     arcType = "Round",
     arcRecess = 2.0,
@@ -273,7 +285,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=4\n" to:ss
+    format "FRAMER_PARAMS=5\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -296,6 +308,7 @@ fn FR_ParamsToString PR =
     format "allowWall=%\n" PR.allowWall to:ss
     format "entrance=%\n" PR.entrance to:ss
     format "entranceFactor=%\n" (FR_F PR.entranceFactor) to:ss
+    format "doorH=%\n" (FR_F PR.doorH) to:ss
     format "cornice=%\n" PR.cornice to:ss
     format "arcType=%\n" PR.arcType to:ss
     format "arcRecess=%\n" (FR_F PR.arcRecess) to:ss
@@ -370,6 +383,7 @@ fn FR_ParamsFromString txt =
                 "allowWall": PR.allowWall = (v == "true")
                 "entrance": PR.entrance = v
                 "entranceFactor": PR.entranceFactor = v as float
+                "doorH": PR.doorH = v as float
                 "cornice": PR.cornice = (v == "true")
                 "arcType": PR.arcType = v
                 "arcRecess": PR.arcRecess = v as float
@@ -739,11 +753,15 @@ fn FR_Loggia p bu1 bu2 z1 z2 T depth R fw basis wallMat frameMat glassMat slabMa
    TRAVÉE D'ENTRÉE (porte, vitrages latéraux, imposte, auvent)
 ========================================================= */
 
-fn FR_Entrance p bu1 bu2 groundH T depth fw basis frameMat glassMat doorMat canopy =
+fn FR_Entrance p bu1 bu2 groundH T depth fw basis frameMat glassMat doorMat canopy doorH =
 (
     local bw = bu2-bu1
     local dW = amin #(1.2, bw*0.4)
-    local dH = amin #(2.4, groundH-0.3)
+    -- toutes les portes ont la même hauteur (seule la largeur varie) :
+    -- 2,05 m maison de ville, 3,00 m magasin / grand immeuble
+    local dH = amin #(doorH, groundH-0.3)
+
+    if dH < 1.9 do dH = 1.9
     local dl = (bu1+bu2)/2 - dW/2
     local dr = dl + dW
 
@@ -953,7 +971,7 @@ fn FR_ArchGlazing p u1 u2 zsp rise T fw basis frameMat glassMat =
 
 -- une travée en arcade : mur au-dessus de l'ouverture + vitrine (ou entrée) reculée de "recess"
 -- arcType : "Round" plein cintre, "Segment" arc surbaissé, "Flat" linteau droit (portique)
-fn FR_Arcade p bu1 bu2 groundH T depth recess lintelH arcType fw basis frameMat glassMat doorMat wallMat isEnt glArch =
+fn FR_Arcade p bu1 bu2 groundH T depth recess lintelH arcType fw basis frameMat glassMat doorMat wallMat isEnt glArch doorH =
 (
     local bw = bu2 - bu1
     local vfa = -depth*0.5
@@ -991,7 +1009,7 @@ fn FR_Arcade p bu1 bu2 groundH T depth recess lintelH arcType fw basis frameMat 
     FR_VC = vfa + recess + T/2
 
     if isEnt then
-        FR_Entrance p bu1 bu2 crown T depth fw basis frameMat glassMat doorMat false
+        FR_Entrance p bu1 bu2 crown T depth fw basis frameMat glassMat doorMat false doorH
     else if glArch and rise >= 0.05 then
         FR_ArchGlazing p bu1 bu2 zsp rise T fw basis frameMat glassMat
     else
@@ -1780,11 +1798,11 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
 
         if mode == "Entrance" then
         (
-            FR_Entrance p bu1 bu2 groundH T depth fw basis frameMat glassMat doorMat true
+            FR_Entrance p bu1 bu2 groundH T depth fw basis frameMat glassMat doorMat true PR.doorH
         )
         else if mode == "Arcade" then
         (
-            FR_Arcade p bu1 bu2 groundH T depth PR.arcRecess PR.arcLintel arcT fw basis frameMat glassMat doorMat wallMat (i == entIdx) (PR.arcGlArch and not isPort)
+            FR_Arcade p bu1 bu2 groundH T depth PR.arcRecess PR.arcLintel arcT fw basis frameMat glassMat doorMat wallMat (i == entIdx) (PR.arcGlArch and not isPort) PR.doorH
         )
         else if mode == "Storefront" then
         (
@@ -1799,7 +1817,15 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
             local doorW = (bu2-bu1)*0.42
             local splitU = bu1+doorW
 
-            FR_LocalBox (p+"_Door") ((bu1+splitU)/2) FR_VC ((z1+z2)/2) doorW (T*0.7) (z2-z1-fw) basis doorMat
+            -- porte à la hauteur commune (réglable), PAS pleine hauteur du rdc
+            local dH = amin #(PR.doorH, z2-z1-0.3)
+
+            if dH < 1.9 do dH = 1.9
+
+            FR_LocalBox (p+"_Door") ((bu1+splitU)/2) FR_VC (dH/2) doorW (T*0.7) dH basis doorMat
+
+            -- imposte vitrée au-dessus de la porte, jusqu'au bandeau
+            FR_Glass (p+"_Transom") bu1 splitU dH (z2-fw/2) T fw basis frameMat glassMat 0
             FR_Glass (p+"_Side") splitU bu2 z1 z2 T fw basis frameMat glassMat 0
             FR_LocalBox (p+"_DoorHead") ((bu1+bu2)/2) FR_VC (z2-fw/2) (bu2-bu1) T fw basis frameMat
         )
@@ -1808,8 +1834,9 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
             -- maison de ville : mur plein, fenêtre standard encadrée par travée
             -- (la travée d'entrée reçoit la porte d'entrée, voir plus haut)
             local bw = bu2 - bu1
-            local wW = amin #(amax #(bw*0.55, 0.8), 1.6)
-            local wH = amin #(1.5, groundH - 1.1)
+            -- fenêtre de maison de ville : 1,40 m de large × 1,20 m de haut, allège à 0,90 m
+            local wW = amin #(amax #(bw*0.55, 0.8), 1.4)
+            local wH = amin #(1.2, groundH - 1.1)
 
             -- tirage casquettes (mêmes réglages que les étages)
             local capK = "None"
@@ -2853,7 +2880,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
 
     /* ----- onglet 3 : Rez-de-chaussée ----- */
 
-    groupBox gb7 "Rez-de-chaussée" pos:[10,160] width:410 height:206
+    groupBox gb7 "Rez-de-chaussée" pos:[10,160] width:410 height:240
     dropdownList ddGround "Type du rez-de-chaussée :" pos:[25,182] width:380 items:#("Vitrine","Porte + vitrage","Alternance vitrine / porte","Panneaux pleins","Travée vide (passage)","Arcades en arc","Portique à colonnes (type Perret)","Maison de ville (porte + fenêtres)") selection:1 tooltip:"Composition du rez-de-chaussée."
     dropdownList ddArc "Forme des arcades :" pos:[25,232] width:380 items:#("Plein cintre","Arc surbaissé","Linteau droit (portique)") selection:1 tooltip:"Forme des ouvertures des arcades (type Perret, Le Havre)."
     label l_spArcR "Retrait de la vitrine :" pos:[25,286] width:185 height:16
@@ -2861,7 +2888,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     label l_spArcL "Bande pleine au-dessus :" pos:[25,314] width:185 height:16
     spinner spArcL "" pos:[215,312] width:190 range:[0.2,3,0.6] type:#float scale:0.05 tooltip:"Hauteur de mur plein entre le haut des arcades et le bandeau."
     checkbox cbArcGl "Vitrines en arc (suivent l'arche)" pos:[25,342] checked:true tooltip:"Coché : le vitrage de la galerie suit la forme de l'arche. Décoché : vitrines rectangulaires."
-    groupBox gb9 "Travée d'entrée" pos:[10,374] width:410 height:106
+    label l_spDoorH "Hauteur des portes :" pos:[25,368] width:185 height:16
+    spinner spDoorH "" pos:[215,366] width:190 range:[2,6,3] type:#float scale:0.05 tooltip:"Hauteur commune de toutes les portes du rez-de-chaussée (seule la largeur varie). 2,05 m minimum pour une maison de ville, 3,00 m pour un magasin ou un grand immeuble."
+    groupBox gb9 "Travée d'entrée" pos:[10,408] width:410 height:106
     dropdownList ddEntrance "Position de l'entrée :" pos:[25,396] width:380 items:#("Aucune","Centre","Gauche","Droite","Aléatoire") selection:2 tooltip:"Position de la travée d'entrée : plus large, avec porte, vitrages, imposte et auvent."
     label l_spEntW "Largeur de l'entrée (facteur) :" pos:[25,450] width:185 height:16
     spinner spEntW "" pos:[215,448] width:190 range:[1,3,1.6] type:#float scale:0.1 tooltip:"Largeur de la travée d'entrée par rapport aux autres."
@@ -3018,6 +3047,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         ddEntrance.visible = t3
         l_spEntW.visible = t3
         spEntW.visible = t3
+        l_spDoorH.visible = t3
+        spDoorH.visible = t3
 
         gb10.visible = t4
         ddRail.visible = t4
@@ -3224,6 +3255,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         PR.allowWall = cbWall.checked
         PR.entrance = FR_EntCodes[ddEntrance.selection]
         PR.entranceFactor = spEntW.value
+        PR.doorH = spDoorH.value
         PR.cornice = cbCornice.checked
 
         PR.groundMode = FR_GroundCodes[ddGround.selection]
@@ -3277,6 +3309,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         cbBalcony.checked = PR.allowBalcony
         cbWall.checked = PR.allowWall
         spEntW.value = PR.entranceFactor
+        spDoorH.value = PR.doorH
         cbCornice.checked = PR.cornice
 
         local ei = findItem FR_EntCodes PR.entrance
@@ -4045,6 +4078,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
                     PRk.groundMode = PR1.groundMode
                     PRk.entrance = PR1.entrance
                     PRk.entranceFactor = PR1.entranceFactor
+                    PRk.doorH = PR1.doorH
                     PRk.seedVal = PR1.seedVal + k - 1
                     PRk.variation = PR1.variation
                     PRk.widthVar = PR1.widthVar
@@ -4254,6 +4288,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     on spWidthVar entered do FR_LiveTick()
     on spEntW buttonup do FR_LiveTick()
     on spEntW entered do FR_LiveTick()
+    on spDoorH buttonup do FR_LiveTick()
+    on spDoorH entered do FR_LiveTick()
     on spRailH buttonup do FR_LiveTick()
     on spRailH entered do FR_LiveTick()
     on spRailD buttonup do FR_LiveTick()
@@ -4286,6 +4322,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     on ddGround selected i do
     (
         UpdateArcUI()
+
+        -- auto-réglage de la hauteur des portes selon le type de rdc
+        spDoorH.value = (if FR_GroundCodes[i] == "TownHouse" then 2.05 else 3.0)
+
         FR_LiveTick()
     )
 

@@ -13,6 +13,16 @@ guides d'étages et moulures balayées).
 
 ## Version 0.6.4
 
+- **Échelle des fenêtres du rdc maison de ville** : fenêtres à **1,40 m de large
+  × 1,20 m de haut**, allège à **0,90 m** (avant, elles étaient trop grandes).
+- **Hauteur des portes unifiée et réglable** : toutes les portes ont la même
+  hauteur (seule la largeur varie), via le nouveau réglage *Hauteur des portes*
+  de l'onglet Rez-de-chaussée — **2,05 m minimum pour une maison de ville**,
+  **3,00 m pour un magasin ou un grand immeuble** ; le réglage suit
+  automatiquement le choix du type de rez-de-chaussée. Avant, les portes
+  « Porte + vitrage » montaient jusqu'au bandeau (pleine hauteur du rdc) et la
+  travée d'entrée était bridée à 2,40 m. Une **imposte vitrée** ferme désormais
+  le reste de la hauteur au-dessus des portes « Porte + vitrage ».
 - **Volets battants corrigés** : ils débordaient au-dessus des fenêtres (aux
   étages comme au rdc).
 - **Fond de galerie** : mur opaque ajouté derrière le vitrage reculé des
