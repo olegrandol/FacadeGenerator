@@ -11,6 +11,19 @@ guides d'étages et moulures balayées).
 2. Dans 3ds Max : menu *Scripting > Run Script…* et choisir le fichier.
 3. La fenêtre FRAMER s'ouvre (mode création / mode édition).
 
+## Version 0.6.6
+
+- **Bow-windows** (nouveau choix *Bow-windows* du menu *Balcons de l'étage*) :
+  oriel vitré en 3 facettes (joues à 45° + face avant) sur toute la travée,
+  dalle et capot compris. Profondeur = réglage balcon (varie avec
+  *Variation de profondeur*) ; la face avant garde au moins 0,8 m de large.
+- **Baies cintrées** (onglet Hasard, *Baies cintrées (% des fenêtres)*) :
+  part des fenêtres des étages à tête en plein cintre, vitrage et cadre
+  suivant l'arc (tirage par travée). Pas de volets roulants, ni volets
+  battants, ni moulure d'encadrement sur une baie cintrée.
+- **Onglets lisibles** : libellés raccourcis (Gén., Rdc, Étag., Fen., Toit,
+  Hasard, Moul.) — l'onglet Moulures était tronqué à droite.
+
 ## Version 0.6.5
 
 - **Encadrement des baies (moulure d'assemblage)** (onglet Fenêtres, groupe
