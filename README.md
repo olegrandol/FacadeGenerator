@@ -11,6 +11,15 @@ guides d'étages et moulures balayées).
 2. Dans 3ds Max : menu *Scripting > Run Script…* et choisir le fichier.
 3. La fenêtre FRAMER s'ouvre (mode création / mode édition).
 
+## Version 0.6.4
+
+- **Rez-de-chaussée « Maison de ville »** (nouveau choix dans *Type du
+  rez-de-chaussée*) : mur plein avec une fenêtre standard encadrée par travée,
+  et la porte d'entrée sur la travée d'entrée. Les volets roulants (pourcentage
+  + ouverture) et les casquettes/brise-soleil s'appliquent aussi aux fenêtres
+  du rez-de-chaussée. Recette type : rez 3–4 m, 2 étages « Fenêtres », volets
+  à 100 %, toit à deux pentes ou quatre pans.
+
 ## Version 0.6.3
 
 - **Presets** : sauvegarde et rechargement des réglages de la fenêtre (travées,

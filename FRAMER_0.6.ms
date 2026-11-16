@@ -1,7 +1,16 @@
 /*
-    FRAMER 0.6.3
+    FRAMER 0.6.4
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.4 :
+    - RDC « MAISON DE VILLE » (nouveau choix du menu Type du rez-de-chaussée) :
+      mur plein avec une fenêtre standard encadrée par travée, et la porte
+      d'entrée sur la travée d'entrée (réglage Entrée de l'onglet Général).
+      Les volets roulants (onglet Fenêtres : pourcentage + ouverture) et les
+      casquettes/brise-soleil s'appliquent aussi aux fenêtres du rez-de-chaussée.
+      Idéal avec : rez-de-chaussée 3–4 m, 2 étages « Fenêtres », volets à 100 %,
+      toit à deux pentes ou quatre pans.
 
     NOUVEAU EN 0.6.3 :
     - PRESETS : sauvegardez vos réglages et rechargez-les à tout moment (groupe
@@ -105,7 +114,7 @@ global FR_Summary = ""     -- résumé d'une ligne de la dernière génération
 global FR_Ctx = ""         -- préfixe des messages ("Segment 2 : ...")
 
 -- codes internes <-> libellés des listes déroulantes (même ordre)
-global FR_GroundCodes = #("Storefront","Door + sidelight","Alternating storefront / door","Opaque infill","Empty bay","Arcade","Portico")
+global FR_GroundCodes = #("Storefront","Door + sidelight","Alternating storefront / door","Opaque infill","Empty bay","Arcade","Portico","TownHouse")
 global FR_ArcCodes = #("Round","Segment","Flat")
 global FR_LastRoot = undefined   -- façade actuellement en édition
 global FR_UpperCodes = #("Window","Glazed panel","Opaque panel","Plain wall")
@@ -1730,6 +1739,31 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
             FR_Glass (p+"_Side") splitU bu2 z1 z2 T fw basis frameMat glassMat 0
             FR_LocalBox (p+"_DoorHead") ((bu1+bu2)/2) FR_VC (z2-fw/2) (bu2-bu1) T fw basis frameMat
         )
+        else if mode == "TownHouse" then
+        (
+            -- maison de ville : mur plein, fenêtre standard encadrée par travée
+            -- (la travée d'entrée reçoit la porte d'entrée, voir plus haut)
+            local bw = bu2 - bu1
+            local wW = amin #(amax #(bw*0.55, 0.8), 1.6)
+            local wH = amin #(1.5, groundH - 1.1)
+
+            -- tirages volets roulants et casquettes (mêmes réglages que les étages)
+            local shutOpen = -1.0
+
+            if PR.shutPct > 0.0 and (random 0.0 100.0) < PR.shutPct do shutOpen = PR.shutOpen
+
+            local capK = "None"
+
+            if PR.capMode != "None" do
+            (
+                if PR.capPct >= 100.0 then
+                    capK = PR.capMode
+                else if (random 0.0 100.0) < PR.capPct do
+                    capK = PR.capMode
+            )
+
+            FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat wW wH 0.9 shutOpen:shutOpen capK:capK capD:PR.capD
+        )
         -- "Empty bay" : passage ouvert, rien n'est généré
     )
 
@@ -2681,7 +2715,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.3" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -2745,7 +2779,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.3" width:430
     /* ----- onglet 3 : Rez-de-chaussée ----- */
 
     groupBox gb7 "Rez-de-chaussée" pos:[10,160] width:410 height:206
-    dropdownList ddGround "Type du rez-de-chaussée :" pos:[25,182] width:380 items:#("Vitrine","Porte + vitrage","Alternance vitrine / porte","Panneaux pleins","Travée vide (passage)","Arcades en arc","Portique à colonnes (type Perret)") selection:1 tooltip:"Composition du rez-de-chaussée."
+    dropdownList ddGround "Type du rez-de-chaussée :" pos:[25,182] width:380 items:#("Vitrine","Porte + vitrage","Alternance vitrine / porte","Panneaux pleins","Travée vide (passage)","Arcades en arc","Portique à colonnes (type Perret)","Maison de ville (porte + fenêtres)") selection:1 tooltip:"Composition du rez-de-chaussée."
     dropdownList ddArc "Forme des arcades :" pos:[25,232] width:380 items:#("Plein cintre","Arc surbaissé","Linteau droit (portique)") selection:1 tooltip:"Forme des ouvertures des arcades (type Perret, Le Havre)."
     label l_spArcR "Retrait de la vitrine :" pos:[25,286] width:185 height:16
     spinner spArcR "" pos:[215,284] width:190 range:[0.5,6,2] type:#float scale:0.1 tooltip:"Retrait de la vitrine derrière les arcades (galerie couverte)."
