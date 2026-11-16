@@ -23,7 +23,7 @@ guides d'étages et moulures balayées).
   casquettes, toit-terrasse avec acrotère).
 - `presets/Facade_photo5.framer` — résidence blanche d'après modèle 3D (6 travées,
   6 étages, balcons individuels pleine travée à garde-corps vitré 1,20 m,
-  porte-fenêtres PLEINE HAUTEUR (allège 0, vitrage 2,90 m, 85 % de la travée),
+  porte-fenêtres PLEINE HAUTEUR (allège 0, vitrage 2,90 m, 85 % de la travée), balcons en MIX par travée (50 % saillants, 30 % loggias),
   menuiseries gris foncé, toit-terrasse).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
@@ -35,6 +35,11 @@ Copier dans `plugcfg\FRAMER\presets` puis Charger.
 - **Bow-window simple** (nouveau choix *Bow simple (rectangulaire)* du menu
   Balcons de l'étage) : oriel vitré en saillie parallélépipédique sans joues
   inclinées, poteaux d'angle droits, dalle et capot biseautés.
+- **Rythme par travée** (nouveau choix *Mix (par travée)* du menu Balcons de
+  l'étage) : sur un même étage, chaque travée tire au hasard balcon saillant,
+  loggia ou rien, selon deux pourcentages réglables dans l'onglet Étages
+  (« Mix : balcons (% travées) », « Mix : loggias (% travées) ») — le tirage
+  dépend de la graine.
 - **Profondeur et variation par étage** : en mode *Indépendants*, la profondeur
   des balcons/loggias et leur variation aléatoire (± %) se règlent étage par
   étage (comme la hauteur et le type) ; en mode *Identiques*, un réglage commun.

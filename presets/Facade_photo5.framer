@@ -1,4 +1,4 @@
-FRAMER_PARAMS=11
+FRAMER_PARAMS=13
 width=23.0000
 groundH=3.2000
 upperH=3.0000
@@ -60,6 +60,8 @@ flMode=Window,Window,Window,Window,Window,Window
 flWin=85.0000,85.0000,85.0000,85.0000,85.0000,85.0000
 flHt=2.9000,2.9000,2.9000,2.9000,2.9000,2.9000
 flSill=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
-flBalc=Out,Out,Out,Out,Out,Out
+flBalc=Mix,Mix,Mix,Mix,Mix,Mix
 flBalcD=1.2000,1.2000,1.2000,1.2000,1.2000,1.2000
 flBalcVar=0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
+mixOut=50.0000
+mixIn=30.0000

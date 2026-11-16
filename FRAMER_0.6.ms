@@ -4,6 +4,11 @@
     Autodesk 3ds Max 2026
 
     NOUVEAU EN 0.6.9 :
+    - RYTHME PAR TRAVÉE (nouveau choix « Mix (par travée) » du menu Balcons de
+      l'étage) : sur un même étage, chaque travée tire au hasard balcon saillant,
+      loggia ou rien, selon deux pourcentages réglables (balcons %, loggias %) —
+      comme sur un vrai immeuble où loggias et balcons se répartissent travée par
+      travée. Le tirage dépend de la graine.
     - ARÊTES BISEAUTÉES sur les casquettes et les dalles (balcons, bow-windows) :
       chanfrein sous l'arête côté rue (profil trapézoïdal balayé) au lieu de la
       dalle rectangulaire brute — ombre plus douce, lecture plus fine.
@@ -290,7 +295,7 @@ global FR_GroundCodes = #("Storefront","Door + sidelight","Alternating storefron
 global FR_ArcCodes = #("Round","Segment","Flat")
 global FR_LastRoot = undefined   -- façade actuellement en édition
 global FR_UpperCodes = #("Window","Glazed panel","Opaque panel","Plain wall","TownWin")
-global FR_BalcCodes = #("None","Out","In","Cont","Bow","BowS")
+global FR_BalcCodes = #("None","Out","In","Cont","Bow","BowS","Mix")
 global FR_EntCodes = #("None","Center","Left","Right","Random")
 global FR_RailCodes = #("None","Glass","Bars","Solid","Lisse")
 global FR_CapCodes = #("None","Slab","Lam")
@@ -384,7 +389,11 @@ struct FRParams
     -- (mode indépendants) ; les globales balcD/balcVar servent au mode identiques
     -- et de défaut pour les façades plus anciennes
     flBalcD = #(),
-    flBalcVar = #()
+    flBalcVar = #(),
+    -- rythme PAR TRAVÉE : quand un étage est en "Mix", chaque travée tire au
+    -- hasard balcon saillant (mixOut %), loggia (mixIn %) ou rien (le reste)
+    mixOut = 40.0,
+    mixIn = 30.0
 )
 
 /* ---------------------------------------------------------------------
@@ -496,7 +505,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=11\n" to:ss
+    format "FRAMER_PARAMS=13\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -561,6 +570,8 @@ fn FR_ParamsToString PR =
     format "flBalc=%\n" (FR_JoinS PR.flBalc) to:ss
     format "flBalcD=%\n" (FR_JoinF PR.flBalcD) to:ss
     format "flBalcVar=%\n" (FR_JoinF PR.flBalcVar) to:ss
+    format "mixOut=%\n" (FR_F PR.mixOut) to:ss
+    format "mixIn=%\n" (FR_F PR.mixIn) to:ss
 
     ss as string
 )
@@ -663,6 +674,8 @@ fn FR_ParamsFromString txt =
                 "flBalc": PR.flBalc = for s in (filterString v ",") collect s
                 "flBalcD": PR.flBalcD = for s in (filterString v ",") collect (s as float)
                 "flBalcVar": PR.flBalcVar = for s in (filterString v ",") collect (s as float)
+                "mixOut": PR.mixOut = v as float
+                "mixIn": PR.mixIn = v as float
             )
         )
     )
@@ -2470,13 +2483,23 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
             (
                 local variant = colVar[i]
 
+                -- rythme PAR TRAVÉE : étage en "Mix" -> chaque travée tire son
+                -- propre type (balcon saillant / loggia / rien) selon les %
+                local knd = kind
+
+                if kind == "Mix" do
+                (
+                    local r = random 0.0 100.0
+                    knd = if r < PR.mixOut then "Out" else if r < (PR.mixOut + PR.mixIn) then "In" else "None"
+                )
+
                 -- balcon filant : toutes les travées deviennent des porte-fenêtres
-                if kind == "Cont" do variant = "Wide"
+                if knd == "Cont" do variant = "Wide"
 
                 -- tirages volets roulants et casquettes (après les variantes, pour garder la séquence du hasard)
                 -- pas de garde-corps de fenêtre s'il y a un balcon ou une loggia :
                 -- c'est le balcon qui porte le garde-corps (sinon deux garde-corps superposés)
-                local railK = if kind == "None" then PR.railMode else "None"
+                local railK = if knd == "None" then PR.railMode else "None"
                 local shutOpen = -1.0
 
                 if PR.shutPct > 0.0 and (random 0.0 100.0) < PR.shutPct do shutOpen = PR.shutOpen
@@ -2503,20 +2526,20 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
                 if fBalcVar > 0.0 do
                     bd = amax #(fBalcD*0.35, fBalcD * (1.0 + ((random -1.0 1.0) * fBalcVar/100.0)))
 
-                if kind == "Bow" or kind == "BowS" then
+                if knd == "Bow" or knd == "BowS" then
                 (
                     -- bow-window : oriel vitré sur toute la travée
                     -- (3 facettes à joues 45°, ou simple rectangulaire sans biseaux)
-                    FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat simple:(kind == "BowS")
+                    FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat simple:(knd == "BowS")
                     append balcDepths bd
                 )
                 else if variant == "Wall" then
                 (
                     FR_WallRect (p+"_Wall") bu1 bu2 z1 z2 T basis wallMat
                 )
-                else if kind == "In" then
+                else if knd == "In" then
                 (
-                    -- loggia : le réglage d'étage s'applique à toutes les travées
+                    -- loggia (réglage d'étage OU tirage du mix par travée)
                     FR_Loggia p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat pierMat
                     append balcDepths bd
                 )
@@ -2541,8 +2564,8 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
                     if fm == "TownWin" and wr != undefined and not awin do
                         FR_ShutterBattant p (wr[1]) (wr[2]) (wr[3]) (wr[4]-wr[3]) T fw basis (FR_Material "FRAMER_Shutters" (color 172 166 152) 100) PR.shutOpen
 
-                    -- balcon saillant : réglage d'étage (kind) OU variante tirée au hasard
-                    if kind == "Out" or variant == "Balcony" do
+                    -- balcon saillant : réglage d'étage (knd) OU variante tirée au hasard
+                    if knd == "Out" or variant == "Balcony" do
                     (
                         FR_Balcony p bu1 bu2 z1 depth bd basis pierMat frameMat glassMat railK:PR.railMode slTh:PR.slabTh
                         append balcDepths bd
@@ -3515,13 +3538,17 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
     spinner spWinH "" pos:[215,476] width:190 range:[0.3,4,1.5] type:#float scale:0.05 tooltip:"Hauteur de la fenêtre."
     label l_spSill "Hauteur d'allège :" pos:[25,506] width:185 height:16
     spinner spSill "" pos:[215,504] width:190 range:[0,3,0.9] type:#float scale:0.05 tooltip:"Hauteur entre le sol de l'étage et le bas de la fenêtre."
-    dropdownList ddBalc "Balcons de l'étage :" pos:[25,532] width:380 items:#("Aucun","Saillants","Rentrants (loggias)","Filant (continu)","Bow-windows","Bow simple (rectangulaire)") selection:2 tooltip:"Aucun, saillants, rentrants (loggias), filants (dalle continue), bow-windows (oriels vitrés en 3 facettes) ou bow simple (saillie rectangulaire sans joues inclinées). S'applique à TOUTES les travées de l'étage."
+    dropdownList ddBalc "Balcons de l'étage :" pos:[25,532] width:380 items:#("Aucun","Saillants","Rentrants (loggias)","Filant (continu)","Bow-windows","Bow simple (rectangulaire)","Mix (par travée)") selection:2 tooltip:"Aucun, saillants, rentrants (loggias), filants (dalle continue), bow-windows (oriels vitrés en 3 facettes), bow simple (saillie rectangulaire sans joues inclinées), ou MIX : chaque travée de l'étage tire au hasard balcon saillant, loggia ou rien (rythme par travée, comme un vrai immeuble)."
     label l_spBalcVar "Variation de profondeur (± %) :" pos:[25,576] width:185 height:16
     spinner spBalcVar "" pos:[215,574] width:190 range:[0,80,0] type:#float scale:1 tooltip:"Variation ALÉATOIRE de la profondeur des balcons et loggias, en ± % autour de la profondeur réglée (0 = profondeur fixe). Tirage par travée. En mode indépendants, ce réglage est PROPRE À L'ÉTAGE affiché (étage n° ci-dessus)."
     label l_spBalcD "Profondeur balcon / loggia :" pos:[25,602] width:185 height:16
     spinner spBalcD "" pos:[215,600] width:190 range:[0.3,2.5,0.8] type:#float scale:0.05 tooltip:"Profondeur des balcons saillants et des loggias. En mode indépendants, ce réglage est PROPRE À L'ÉTAGE affiché (étage n° ci-dessus)."
     label l_spSlabTh "Épaisseur des dalles (m) :" pos:[25,628] width:185 height:16
     spinner spSlabTh "" pos:[215,626] width:190 range:[0.08,0.6,0.30] type:#float scale:0.01 tooltip:"Épaisseur des dalles de balcons. 0,30 : dalle épaisse qui se lit comme une casquette à chaque niveau (0.6.7). 0,15 : dalle fine."
+    label l_spMixOut "Mix : balcons (% travées) :" pos:[25,654] width:185 height:16
+    spinner spMixOut "" pos:[215,652] width:190 range:[0,100,40] type:#float scale:1 tooltip:"Utilisé quand un étage est en Mix (par travée) : pourcentage de travées avec balcon SAILLANT. Le reste se répartit entre loggias et travées sans balcon. Le tirage dépend de la graine (onglet Gén.)."
+    label l_spMixIn "Mix : loggias (% travées) :" pos:[25,680] width:185 height:16
+    spinner spMixIn "" pos:[215,678] width:190 range:[0,100,30] type:#float scale:1 tooltip:"Utilisé quand un étage est en Mix (par travée) : pourcentage de travées avec LOGGIA (balcon rentrant). Le reste des travées reste plein (fenêtres sans balcon)."
 
     /* ----- onglet 3 : Rez-de-chaussée ----- */
 
@@ -3713,6 +3740,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
         spBalcVar.visible = t2
         l_spSlabTh.visible = t2
         spSlabTh.visible = t2
+        l_spMixOut.visible = t2
+        spMixOut.visible = t2
+        l_spMixIn.visible = t2
+        spMixIn.visible = t2
 
         gb7.visible = t3
         ddGround.visible = t3
@@ -3921,6 +3952,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
         PR.balcD = spBalcD.value
         PR.balcVar = spBalcVar.value
         PR.slabTh = spSlabTh.value
+        PR.mixOut = spMixOut.value
+        PR.mixIn = spMixIn.value
         PR.panOpaque = spPanOp.value
 
         PR.upperH = spUpper.value
@@ -4018,6 +4051,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
         spBalcD.value = PR.balcD
         spBalcVar.value = PR.balcVar
         spSlabTh.value = PR.slabTh
+        spMixOut.value = PR.mixOut
+        spMixIn.value = PR.mixIn
         spPanOp.value = PR.panOpaque
 
         spSeed.value = PR.seedVal
@@ -4763,6 +4798,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
                 FR_CSegs[k].allowWide = src.allowWide
                 FR_CSegs[k].allowBalcony = src.allowBalcony
                 FR_CSegs[k].allowWall = src.allowWall
+                FR_CSegs[k].mixOut = src.mixOut
+                FR_CSegs[k].mixIn = src.mixIn
                 FR_CSegs[k].arcType = src.arcType
                 FR_CSegs[k].arcRecess = src.arcRecess
                 FR_CSegs[k].arcLintel = src.arcLintel
@@ -4872,6 +4909,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
                     PRk.flBalcVar = (FR_CopyArr PR1.flBalcVar)
                     PRk.balcD = PR1.balcD
                     PRk.balcVar = PR1.balcVar
+                    PRk.mixOut = PR1.mixOut
+                    PRk.mixIn = PR1.mixIn
                     PRk.panOpaque = PR1.panOpaque
                     PRk.depth = PR1.depth
                     PRk.fw = PR1.fw
