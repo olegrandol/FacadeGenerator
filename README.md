@@ -40,6 +40,13 @@ Copier dans `plugcfg\FRAMER\presets` puis Charger.
   loggia ou rien, selon deux pourcentages réglables dans l'onglet Étages
   (« Mix : balcons (% travées) », « Mix : loggias (% travées) ») — le tirage
   dépend de la graine.
+- **Mémoire** : la géométrie partielle d'une génération interrompue par une
+  erreur est désormais supprimée (try/catch) au lieu de rester orpheline dans
+  la scène ; les débris FRAMER laissés par les crashs précédents sont nettoyés
+  à chaque génération ; garbage collector après chaque mise à jour.
+- **Marqueur visuel de mode** : liseret bleu en création, orange vif en édition
+  (+ « ● ÉDITION ● » dans le libellé, le titre du groupe et le titre de la
+  fenêtre) pour ne plus se tromper de mode.
 - **Profondeur et variation par étage** : en mode *Indépendants*, la profondeur
   des balcons/loggias et leur variation aléatoire (± %) se règlent étage par
   étage (comme la hauteur et le type) ; en mode *Identiques*, un réglage commun.

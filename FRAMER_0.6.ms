@@ -4,6 +4,19 @@
     Autodesk 3ds Max 2026
 
     NOUVEAU EN 0.6.9 :
+    - MARQUEUR VISUEL DE MODE : liseret coloré dans le bandeau « Mode de
+      travail » — BLEU en création, ORANGE VIF en édition — avec le libellé,
+      le titre du groupe et le titre de la fenêtre qui affichent « ● ÉDITION ● »
+      pour ne plus générer par erreur dans le mauvais mode.
+    - MÉMOIRE : plus de débris orphelins après un plantage. Avant : si la
+      génération crashait à mi-chemin, la géométrie déjà créée restait dans la
+      scène SANS parent — invisible dans le nettoyage (qui ne cherche que parmi
+      les enfants de la racine) et accumulée à chaque crash. Désormais :
+      1) try/catch autour de la génération -> géométrie partielle supprimée
+      avant de relancer l'erreur (façade simple ET mode contour) ;
+      2) FR_CleanOrphans supprime à chaque génération les débris FRAMER_*
+      orphelins laissés par les crashs précédents ;
+      3) gc light après chaque mise à jour (même manuelle, pas qu'en direct).
     - RYTHME PAR TRAVÉE (nouveau choix « Mix (par travée) » du menu Balcons de
       l'étage) : sur un même étage, chaque travée tire au hasard balcon saillant,
       loggia ou rien, selon deux pourcentages réglables (balcons %, loggias %) —
@@ -2679,15 +2692,51 @@ fn FR_Validate PR =
    La nouvelle géométrie est créée d'abord ; l'ancienne n'est supprimée qu'en cas de succès.
 ========================================================= */
 
+-- supprime les débris FRAMER orphelins : géométrie créée par une génération
+-- interrompue par une erreur (jamais parentée à la racine, elle restait dans
+-- la scène et s'accumulait à chaque crash — montée de mémoire invisible)
+fn FR_CleanOrphans =
+(
+    local dead = #()
+
+    for o in objects where o.parent == undefined and \
+        (matchPattern o.name pattern:"FRAMER_*") and \
+        not (matchPattern o.name pattern:"FRAMER_Facade_*") do
+        append dead o
+
+    if dead.count > 0 do
+    (
+        delete dead
+        FR_Msg ((dead.count as string) + " débris FRAMER orphelins supprimés.")
+    )
+
+    dead.count
+)
+
 fn FR_Build PR root doMerge =
 (
+    FR_CleanOrphans()
+
     FR_Pool = #()
 
     local basis = root.transform
 
     local oldKids = for c in root.children where (matchPattern c.name pattern:"FRAMER_*") collect c
 
-    local ok = FR_Generate PR basis
+    local ok = false
+
+    -- si la génération plante à mi-chemin (exception), la géométrie partielle
+    -- déjà créée est supprimée avant de relancer l'erreur
+    try
+    (
+        ok = FR_Generate PR basis
+    )
+    catch
+    (
+        for n in FR_Pool do ( if isValidNode n do delete n )
+        FR_Pool = #()
+        throw()
+    )
 
     if ok == true then
     (
@@ -2703,6 +2752,12 @@ fn FR_Build PR root doMerge =
         )
 
         setUserPropBuffer root (FR_ParamsToString PR)
+    )
+    else
+    (
+        -- échec propre : supprime ce qui vient d'être créé, l'ancienne façade reste intacte
+        for n in FR_Pool do ( if isValidNode n do delete n )
+        FR_Pool = #()
     )
 
     ok
@@ -2930,6 +2985,8 @@ fn FR_BuildContour pts segPRs root doMerge =
 
     if ok do
     (
+        FR_CleanOrphans()
+
         FR_Pool = #()
 
         local bases = FR_ContourSegs pts
@@ -2943,22 +3000,34 @@ fn FR_BuildContour pts segPRs root doMerge =
         for k = 1 to PR0.floors do totalH = totalH + PR0.flH[k]
 
         -- un segment de façade par côté du contour
-        for k = 1 to pts.count do
+        -- (si un segment plante, la géométrie partielle est supprimée avant de
+        -- relancer l'erreur — sinon elle restait orpheline dans la scène)
+        try
         (
-            FR_Ctx = "Segment " + (k as string) + " : "
+            for k = 1 to pts.count do
+            (
+                FR_Ctx = "Segment " + (k as string) + " : "
 
-            local kL = k - 1
-            if kL < 1 do kL = pts.count
+                local kL = k - 1
+                if kL < 1 do kL = pts.count
 
-            local kR = k + 1
-            if kR > pts.count do kR = 1
+                local kR = k + 1
+                if kR > pts.count do kR = 1
 
-            -- marge d'angle : demi-colonne la plus large des deux coins
-            local cL = amax #(segPRs[kL].pier, segPRs[k].pier, PR0.depth*2.0)
-            local cR = amax #(segPRs[k].pier, segPRs[kR].pier, PR0.depth*2.0)
-            local ext = amax #(cL, cR) / 2.0
+                -- marge d'angle : demi-colonne la plus large des deux coins
+                local cL = amax #(segPRs[kL].pier, segPRs[k].pier, PR0.depth*2.0)
+                local cR = amax #(segPRs[k].pier, segPRs[kR].pier, PR0.depth*2.0)
+                local ext = amax #(cL, cR) / 2.0
 
-            if (FR_Generate segPRs[k] bases[k][1] noEndPiers:true endExt:ext noRoof:true) != true do ok = false
+                if (FR_Generate segPRs[k] bases[k][1] noEndPiers:true endExt:ext noRoof:true) != true do ok = false
+            )
+        )
+        catch
+        (
+            for n in FR_Pool do ( if isValidNode n do delete n )
+            FR_Pool = #()
+            FR_Ctx = ""
+            throw()
         )
 
         FR_Ctx = ""
@@ -3473,6 +3542,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
     radioButtons rbWork labels:#("CRÉATION : générer une nouvelle façade","ÉDITION : modifier la façade sélectionnée") columns:1 default:1 pos:[25,26] tooltip:"Création : génère une nouvelle façade. Édition : sélectionnez une façade, elle se charge et les réglages s'appliquent à elle."
     label lbEdit "Nouvelle façade : réglez puis cliquez sur Générer." pos:[25,70] width:390 height:18
     checkbox cbLive "Mise à jour en direct (mode édition)" pos:[25,92] checked:false tooltip:"Applique chaque réglage tout de suite à la façade sélectionnée."
+    -- LISERET de mode : barre bleue en CRÉATION, orange vif en ÉDITION
+    -- (progressBar détournée en bandeau coloré, toujours pleine)
+    progressBar pbModeBar pos:[25,112] width:380 height:8 value:100 color:(color 120 150 190)
 
     -- libellés courts : 7 onglets tiennent dans la largeur (Moulures était tronqué)
     radioButtons rbTab labels:#("Gén.","Rdc","Étag.","Fen.","Toit","Hasard","Moul.") columns:7 default:1 pos:[18,132] tooltip:"Pages de réglages : Général, Rez-de-chaussée, Étages, Fenêtres, Toit, Hasard (variation aléatoire), Moulures."
@@ -4415,6 +4487,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
                     lbInfo.text = FR_Summary
                     redrawViews()
                 )
+
+                -- libère le tas MAXScript après chaque reconstruction (même manuelle)
+                gc light:true
             )
 
             FR_Silent = false
@@ -4461,6 +4536,32 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
     fn SetWorkMode state =
     (
         local edit = (state == 2)
+
+        -- marqueur visuel fort du mode courant (pour ne plus se tromper) :
+        -- liseret bleu + titre simple en CRÉATION, liseret orange + « ÉDITION »
+        -- dans les titres en ÉDITION
+        if edit then
+        (
+            pbModeBar.color = color 235 130 30
+            lbEdit.color = color 200 90 0
+            lbEdit.text = "● MODE ÉDITION : les réglages modifient la façade sélectionnée."
+            gbWork.text = "Mode de travail — ÉDITION"
+        )
+        else
+        (
+            pbModeBar.color = color 120 150 190
+            lbEdit.color = color 30 30 30
+            lbEdit.text = "Nouvelle façade : réglez puis cliquez sur Générer."
+            gbWork.text = "Mode de travail"
+        )
+
+        try
+        (
+            setDialogTitle FRAMER_UI (if edit then \
+                "FRAMER | Générateur de façades 0.6.10 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.10")
+        )
+        catch()
 
         -- création : génération par dimensions, face ou contour ; édition : modification de la façade sélectionnée
         rbMode.enabled = not edit
