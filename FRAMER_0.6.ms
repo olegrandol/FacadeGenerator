@@ -16,6 +16,9 @@
     - TROUS ENTRE TRAVÉES (arcades / portique) : les vitrines reculées et leur
       fond s'arrêtent aux limites de chaque travée — un pilier est maintenant
       reporté au plan des vitrines, dans l'alignement des colonnes de devant.
+    - BARRE BASSE DES VITRINES D'ARCades : supprimée — le vitrage et ses
+      montants descendent maintenant jusqu'au sol (plus de barre horizontale
+      au pied des montants, côté rue comme côté galerie).
     - RDC MAISON DE VILLE : plus de piliers saillants — un mur continu, avec
       les fenêtres de 1,40 × 1,20 m à allège 0,90 m centrées par travée.
     - ÉCHELLE DES FENÊTRES DU RDC MAISON DE VILLE : fenêtres à 1,40 m de large
@@ -533,7 +536,7 @@ fn FR_WallRect n u1 u2 z1 z2 t basis mat =
    CADRE  (depth = épaisseur du mur)
 ========================================================= */
 
-fn FR_Frame prefix u1 u2 z1 z2 depth fw basis mat =
+fn FR_Frame prefix u1 u2 z1 z2 depth fw basis mat noBottom:false =
 (
     local midU = (u1+u2)/2
     local midZ = (z1+z2)/2
@@ -541,25 +544,32 @@ fn FR_Frame prefix u1 u2 z1 z2 depth fw basis mat =
     FR_LocalBox (prefix+"_Left") (u1+fw/2) FR_VC midZ fw depth (z2-z1) basis mat
     FR_LocalBox (prefix+"_Right") (u2-fw/2) FR_VC midZ fw depth (z2-z1) basis mat
     FR_LocalBox (prefix+"_Top") midU FR_VC (z2-fw/2) (u2-u1) depth fw basis mat
-    FR_LocalBox (prefix+"_Bottom") midU FR_VC (z1+fw/2) (u2-u1) depth fw basis mat
+
+    -- barre basse optionnelle : supprimée au pied des vitrines d'arcades
+    -- (le vitrage descend jusqu'au sol)
+    if not noBottom do
+        FR_LocalBox (prefix+"_Bottom") midU FR_VC (z1+fw/2) (u2-u1) depth fw basis mat
 )
 
 /* =========================================================
    ÉLÉMENT VITRÉ
 ========================================================= */
 
-fn FR_Glass prefix u1 u2 z1 z2 depth fw basis frameMat glassMat mullions =
+fn FR_Glass prefix u1 u2 z1 z2 depth fw basis frameMat glassMat mullions noBottom:false =
 (
     local a = u1+fw
     local b = u2-fw
     local c = z1+fw
     local d = z2-fw
 
+    -- sans barre basse : le vitrage et les montants descendent jusqu'en bas
+    if noBottom do c = z1
+
     if b > a and d > c then
     (
         FR_LocalBox (prefix+"_Glass") ((a+b)/2) (FR_VC+depth*0.1) ((c+d)/2) (b-a) (depth*0.28) (d-c) basis glassMat
 
-        FR_Frame prefix u1 u2 z1 z2 depth fw basis frameMat
+        FR_Frame prefix u1 u2 z1 z2 depth fw basis frameMat noBottom:noBottom
 
         if mullions > 0 then
         (
@@ -981,8 +991,8 @@ fn FR_ArchGlazing p u1 u2 zsp rise T fw basis frameMat glassMat =
         )
     )
 
-    -- partie basse rectangulaire
-    FR_Glass p u1 u2 0.0 zsp T fw basis frameMat glassMat 1
+    -- partie basse rectangulaire (sans barre basse : vitrage jusqu'au sol)
+    FR_Glass p u1 u2 0.0 zsp T fw basis frameMat glassMat 1 noBottom:true
 
     -- la bande du verre part d'une droite horizontale à la naissance de l'arc
     -- (tableau construit à part : un collecteur inline en argument déclenche un bug MAXScript)
@@ -1043,7 +1053,7 @@ fn FR_Arcade p bu1 bu2 groundH T depth recess lintelH arcType fw basis frameMat 
     else if glArch and rise >= 0.05 then
         FR_ArchGlazing p bu1 bu2 zsp rise T fw basis frameMat glassMat
     else
-        FR_Glass p bu1 bu2 0.0 crown T fw basis frameMat glassMat 1
+        FR_Glass p bu1 bu2 0.0 crown T fw basis frameMat glassMat 1 noBottom:true
 
     -- fond de galerie : mur opaque juste derrière le vitrage reculé
     -- (bouche la vue à travers la galerie, arcades en arc comme portique)
