@@ -11,6 +11,24 @@ guides d'étages et moulures balayées).
 2. Dans 3ds Max : menu *Scripting > Run Script…* et choisir le fichier.
 3. La fenêtre FRAMER s'ouvre (mode création / mode édition).
 
+## Version 0.6.7
+
+- **Couleurs des matériaux** (onglet Général, groupe *Couleurs des matériaux*) :
+  8 sélecteurs — Murs, Menuiseries, Piliers, Verre, Portes, Volets, Toit,
+  Panneaux. Appliqués à chaque génération / mise à jour : les matériaux de
+  scène `FRAMER_xxx` déjà présents sont recolorés. Mémorisés par façade et
+  dans les presets.
+- **Grande casquette à chaque niveau** : la dalle des balcons (saillants,
+  loggias, filants) passe de 15 à **30 cm** d'épaisseur — avec une saillie de
+  1,20 m, elle se lit comme une casquette proéminente au-dessus de chaque
+  niveau (dessus de dalle inchangé).
+- **Corrigé — toit en mode contour** : le toit rectangulaire « façade simple »
+  était généré pour chaque segment du contour, en plus du toit suivant le
+  contour (mélange incohérent). Le toit part bien du contour (décalé du
+  débord), généré une seule fois.
+- **Corrigé — bow-windows** : erreur de signe sur la profondeur des joues —
+  joues à 45° et dalle/capot invisibles, vitrage avant décalé et trop large.
+
 ## Version 0.6.6
 
 - **Bow-windows** (nouveau choix *Bow-windows* du menu *Balcons de l'étage*) :

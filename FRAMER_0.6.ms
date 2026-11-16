@@ -1,7 +1,30 @@
 /*
-    FRAMER 0.6.6
+    FRAMER 0.6.7
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.7 :
+    - COULEURS DES MATÉRIAUX (onglet Général, groupe « Couleurs des matériaux ») :
+      8 sélecteurs — Murs, Menuiseries, Piliers, Verre, Portes, Volets, Toit,
+      Panneaux. Appliqués à chaque génération / mise à jour : les matériaux de
+      scène FRAMER_xxx déjà présents sont recolorés (pas besoin de les effacer).
+      Mémorisés par façade et dans les presets.
+    - GRANDE CASQUETTE À CHAQUE NIVEAU : la dalle des balcons (saillants,
+      loggias, filants) passe de 15 à 30 cm d'épaisseur — avec une saillie
+      réglée à 1,20 m, elle se lit comme une casquette proéminente au-dessus
+      de chaque niveau (le dessus de la dalle est inchangé, le surplomb pend
+      en dessous).
+
+    CORRIGÉ EN 0.6.7 :
+    - TOIT EN MODE CONTOUR « étrange » : le toit de façade simple (rectangle
+      qui s'étend derrière la façade) était généré pour CHAQUE segment du
+      contour, en plus du toit suivant le contour — d'où un mélange
+      incohérent de toits. Le toit rectangulaire par segment est supprimé :
+      en mode contour, le toit part bien du CONTOUR (décalé du débord),
+      généré une seule fois.
+    - BOW-WINDOWS cassés (erreur de signe sur la profondeur des joues) :
+      joues à 45° et dalle/capot invisibles, vitrage avant décalé et trop
+      large. Les 3 facettes, la dalle et le capot sont maintenant corrects.
 
     NOUVEAU EN 0.6.6 :
     - BOW-WINDOWS (nouveau choix « Bow-windows » du menu Balcons de l'étage) :
@@ -279,6 +302,15 @@ struct FRParams
     surrS = 1.0,
     surrProf = "",
     arcPct = 0.0,
+    -- couleurs des matériaux (communes à tout le bâtiment)
+    colWall = color 214 204 188,
+    colFrame = color 55 62 70,
+    colPier = color 135 138 142,
+    colGlass = color 95 170 205,
+    colDoor = color 95 72 52,
+    colShut = color 172 166 152,
+    colRoof = color 122 84 66,
+    colPanel = color 190 188 178,
     -- toit (commun à tout le bâtiment)
     roofMode = "None",
     roofPitch = 30.0,
@@ -350,6 +382,18 @@ fn FR_F v =
     formattedPrint v format:".4f"
 )
 
+-- lit une couleur sérialisée "r,g,b" (les chaînes MAXScript ne sont pas itérables :
+-- filterString rend un tableau, on accède par index)
+fn FR_ParseColor v =
+(
+    local cc = filterString v ","
+
+    if cc != undefined and cc.count >= 3 then
+        color (cc[1] as integer) (cc[2] as integer) (cc[3] as integer)
+    else
+        color 214 204 188
+)
+
 fn FR_JoinF arr =
 (
     local s = ""
@@ -380,7 +424,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=8\n" to:ss
+    format "FRAMER_PARAMS=9\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -423,6 +467,14 @@ fn FR_ParamsToString PR =
     format "surrS=%\n" (FR_F PR.surrS) to:ss
     format "surrProf=%\n" PR.surrProf to:ss
     format "arcPct=%\n" (FR_F PR.arcPct) to:ss
+    format "colWall=%,%,%\n" PR.colWall.r PR.colWall.g PR.colWall.b to:ss
+    format "colFrame=%,%,%\n" PR.colFrame.r PR.colFrame.g PR.colFrame.b to:ss
+    format "colPier=%,%,%\n" PR.colPier.r PR.colPier.g PR.colPier.b to:ss
+    format "colGlass=%,%,%\n" PR.colGlass.r PR.colGlass.g PR.colGlass.b to:ss
+    format "colDoor=%,%,%\n" PR.colDoor.r PR.colDoor.g PR.colDoor.b to:ss
+    format "colShut=%,%,%\n" PR.colShut.r PR.colShut.g PR.colShut.b to:ss
+    format "colRoof=%,%,%\n" PR.colRoof.r PR.colRoof.g PR.colRoof.b to:ss
+    format "colPanel=%,%,%\n" PR.colPanel.r PR.colPanel.g PR.colPanel.b to:ss
     format "roofMode=%\n" PR.roofMode to:ss
     format "roofPitch=%\n" (FR_F PR.roofPitch) to:ss
     format "roofOver=%\n" (FR_F PR.roofOver) to:ss
@@ -504,6 +556,14 @@ fn FR_ParamsFromString txt =
                 "surrS": PR.surrS = v as float
                 "surrProf": PR.surrProf = v
                 "arcPct": PR.arcPct = v as float
+                "colWall": PR.colWall = FR_ParseColor v
+                "colFrame": PR.colFrame = FR_ParseColor v
+                "colPier": PR.colPier = FR_ParseColor v
+                "colGlass": PR.colGlass = FR_ParseColor v
+                "colDoor": PR.colDoor = FR_ParseColor v
+                "colShut": PR.colShut = FR_ParseColor v
+                "colRoof": PR.colRoof = FR_ParseColor v
+                "colPanel": PR.colPanel = FR_ParseColor v
                 "roofMode": PR.roofMode = v
                 "roofPitch": PR.roofPitch = v as float
                 "roofOver": PR.roofOver = v as float
@@ -557,7 +617,8 @@ fn FR_NewRoot basis =
    MATÉRIAUX (réutilisés s'ils existent déjà dans la scène)
 ========================================================= */
 
-fn FR_Material n c opacityVal =
+-- apply:true -> met aussi à jour la couleur/l'opacité du matériau existant
+fn FR_Material n c opacityVal apply:false =
 (
     local res = undefined
 
@@ -566,7 +627,13 @@ fn FR_Material n c opacityVal =
         if m.name == n do res = m
     )
 
-    if res == undefined do res = standardMaterial name:n diffuse:c opacity:opacityVal
+    if res == undefined then
+        res = standardMaterial name:n diffuse:c opacity:opacityVal
+    else if apply and (classof res) == StandardMaterial do
+    (
+        res.diffuse = c
+        res.opacity = opacityVal
+    )
 
     res
 )
@@ -898,7 +965,9 @@ fn FR_Balcony p bu1 bu2 z depth proj basis slabMat railMat glassMat railK:"Glass
     local uc = (bu1+bu2)/2
     local bw = bu2-bu1
 
-    FR_LocalBox (p+"_Slab") uc cv (z+0.075) bw sy 0.15 basis slabMat
+    -- dalle épaisse (30 cm) : avec une grande saillie elle se lit comme une
+    -- casquette proéminente au-dessus du niveau inférieur (dessus inchangé)
+    FR_LocalBox (p+"_Slab") uc cv z bw sy 0.30 basis slabMat
 
     -- garde-corps du balcon : suit le type choisi pour les garde-corps de fenêtres
     -- (« Aucun » garde le vitré par sécurité ; « Lisse » : seulement la main courante)
@@ -947,13 +1016,14 @@ fn FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat =
     local bw = bu2 - bu1
     local inner = -depth*0.5      -- face avant du mur
     local outer = -depth - bd     -- saillie au-delà des piliers (comme les balcons)
-    local run = outer - inner     -- profondeur horizontale des joues
+    local run = inner - outer     -- profondeur horizontale des joues (POSITIVE :
+                                  -- outer est plus négatif que inner, côté rue)
 
     -- joues à 45° : la face avant garde au moins 0,8 m de large
     if bw - 2.0*run < 0.8 do
     (
         run = (bw - 0.8)/2.0
-        outer = inner + run
+        outer = inner - run
     )
 
     local uc = (bu1+bu2)/2
@@ -965,8 +1035,8 @@ fn FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat =
     local c45 = 0.70711
 
     -- dalle et capot (capot légèrement débordant)
-    FR_LocalBox (p+"_Slab") uc cv (z1+0.075) bw (outer-inner) 0.15 basis wallMat
-    FR_LocalBox (p+"_Cap") uc cv (cz2+0.06) (bw+0.08) (outer-inner+0.08) 0.12 basis wallMat
+    FR_LocalBox (p+"_Slab") uc cv (z1+0.075) bw (inner-outer) 0.15 basis wallMat
+    FR_LocalBox (p+"_Cap") uc cv (cz2+0.06) (bw+0.08) (inner-outer+0.08) 0.12 basis wallMat
 
     -- bases locales des facettes (tournées, composées avec le repère de la façade)
     local bL = (matrix3 [c45,-c45,0] [c45,c45,0] [0,0,1] [bu1, inner, 0]) * basis
@@ -1757,7 +1827,7 @@ fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat =
 fn FR_RoofContour pts segPRs bases totalH =
 (
     local PR0 = segPRs[1]
-    local roofMat = FR_Material "FRAMER_Roof" (color 122 84 66) 100
+    local roofMat = FR_Material "FRAMER_Roof" PR0.colRoof 100 true
 
     -- le toit part du contour décalé vers l'extérieur (débord), avec un fond fermé vu de dessous
     local oPts = FR_OffsetContour pts PR0.roofOver
@@ -1893,7 +1963,7 @@ fn FR_Merge basis tag =
    d'angle du contour s'en chargent) et travées décalées de endExt.
 ========================================================= */
 
-fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
+fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
 (
     local width = PR.width
     local groundH = PR.groundH
@@ -2027,12 +2097,17 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
     local T = depth*0.5
     FR_VC = -depth*0.25
 
-    local frameMat = FR_Material "FRAMER_Frame" (color 55 62 70) 100
-    local pierMat = FR_Material "FRAMER_Piers" (color 135 138 142) 100
-    local glassMat = FR_Material "FRAMER_Glass" (color 95 170 205) 42
-    local panelMat = FR_Material "FRAMER_Panels" (color 190 188 178) 100
-    local doorMat = FR_Material "FRAMER_Door" (color 95 72 52) 100
-    local wallMat = FR_Material "FRAMER_Walls" (color 214 204 188) 100
+    local frameMat = FR_Material "FRAMER_Frame" PR.colFrame 100 true
+    local pierMat = FR_Material "FRAMER_Piers" PR.colPier 100 true
+    local glassMat = FR_Material "FRAMER_Glass" PR.colGlass 42 true
+    local panelMat = FR_Material "FRAMER_Panels" PR.colPanel 100 true
+    local doorMat = FR_Material "FRAMER_Door" PR.colDoor 100 true
+    local wallMat = FR_Material "FRAMER_Walls" PR.colWall 100 true
+
+    -- pré-créer les matériaux utilisés en ligne ailleurs (volets, moulure) :
+    -- les appels inline réutilisent le cache sans avoir besoin des couleurs
+    FR_Material "FRAMER_Shutters" PR.colShut 100 true
+    FR_Material "FRAMER_Moulding" PR.colWall 100 true
 
     -- encadrement des baies : profil (spline choisie ou carré par défaut) + matériau
     local surrP = undefined
@@ -2040,7 +2115,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
 
     if PR.surr do
     (
-        surrM = FR_Material "FRAMER_Moulding" (color 200 196 188) 100
+        surrM = FR_Material "FRAMER_Moulding" PR.colWall 100
 
         local sn = if PR.surrProf != "" then (try(getNodeByName PR.surrProf)catch(undefined)) else undefined
 
@@ -2379,9 +2454,11 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
 
     /* ---------- toit (façade simple : couvre la façade et s'étend derrière) ---------- */
 
-    if PR.roofMode != "None" do
+    -- en mode contour, le toit est généré UNE SEULE FOIS par FR_RoofContour
+    -- (il suit le contour décalé) : pas de toit rectangulaire par segment
+    if PR.roofMode != "None" and not noRoof do
     (
-        local roofMat = FR_Material "FRAMER_Roof" (color 122 84 66) 100
+        local roofMat = FR_Material "FRAMER_Roof" PR.colRoof 100 true
 
         -- rectangle couvert : du plan des piliers (v = -depth) vers l'arrière (roofDepth)
         local bR = matrix3 basis[1] basis[2] basis[3] (basis[4] + basis[2]*(-depth))
@@ -2700,7 +2777,7 @@ fn FR_BuildContour pts segPRs root doMerge =
             local cR = amax #(segPRs[k].pier, segPRs[kR].pier, PR0.depth*2.0)
             local ext = amax #(cL, cR) / 2.0
 
-            if (FR_Generate segPRs[k] bases[k][1] noEndPiers:true endExt:ext) != true do ok = false
+            if (FR_Generate segPRs[k] bases[k][1] noEndPiers:true endExt:ext noRoof:true) != true do ok = false
         )
 
         FR_Ctx = ""
@@ -2708,7 +2785,7 @@ fn FR_BuildContour pts segPRs root doMerge =
         -- colonnes d'angle, centrées sur chaque sommet du contour
         if ok do
         (
-            local pierMat = FR_Material "FRAMER_Piers" (color 135 138 142) 100
+            local pierMat = FR_Material "FRAMER_Piers" PR0.colPier 100 true
 
             for k = 1 to pts.count do
             (
@@ -3203,7 +3280,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.6" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.7" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -3240,6 +3317,23 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.6" width:430
     spinner spFrame "" pos:[215,480] width:190 range:[0.01,1,0.07] type:#float scale:0.01 tooltip:"Épaisseur des cadres de fenêtres et des bandeaux."
     checkbox cbCornice "Corniche en haut" pos:[25,508] checked:true tooltip:"Ajoute une corniche en haut de la façade."
     checkbox cbMerge "Fusionner en un objet par matériau" pos:[25,528] checked:true tooltip:"Regroupe la façade en un objet par matériau (plus léger). Décoché : chaque élément reste séparé."
+    groupBox gbCol "Couleurs des matériaux" pos:[10,560] width:410 height:120
+    label l_cpWall "Murs :" pos:[25,584] width:80 height:16
+    colorPicker cpWall "" pos:[110,582] width:90 height:18 tooltip:"Couleur des murs et bandeaux (matériau FRAMER_Walls)."
+    label l_cpFrame "Menuiseries :" pos:[210,584] width:100 height:16
+    colorPicker cpFrame "" pos:[315,582] width:90 height:18 tooltip:"Couleur des cadres et casquettes (matériau FRAMER_Frame)."
+    label l_cpPier "Piliers :" pos:[25,610] width:80 height:16
+    colorPicker cpPier "" pos:[110,608] width:90 height:18 tooltip:"Couleur des piliers, colonnes et corniche (matériau FRAMER_Piers)."
+    label l_cpGlass "Verre :" pos:[210,610] width:100 height:16
+    colorPicker cpGlass "" pos:[315,608] width:90 height:18 tooltip:"Couleur du verre (matériau FRAMER_Glass, translucide)."
+    label l_cpDoor "Portes :" pos:[25,636] width:80 height:16
+    colorPicker cpDoor "" pos:[110,634] width:90 height:18 tooltip:"Couleur des portes (matériau FRAMER_Door)."
+    label l_cpShut "Volets :" pos:[210,636] width:100 height:16
+    colorPicker cpShut "" pos:[315,634] width:90 height:18 tooltip:"Couleur des volets (matériau FRAMER_Shutters)."
+    label l_cpRoof "Toit :" pos:[25,662] width:80 height:16
+    colorPicker cpRoof "" pos:[110,660] width:90 height:18 tooltip:"Couleur du toit (matériau FRAMER_Roof)."
+    label l_cpPanel "Panneaux :" pos:[210,662] width:100 height:16
+    colorPicker cpPanel "" pos:[315,660] width:90 height:18 tooltip:"Couleur des panneaux pleins/vitrés (matériau FRAMER_Panels)."
 
     /* ----- onglet 2 : Étages ----- */
 
@@ -3415,6 +3509,23 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.6" width:430
         spFrame.visible = t1
         cbCornice.visible = t1
         cbMerge.visible = t1
+        gbCol.visible = t1
+        l_cpWall.visible = t1
+        cpWall.visible = t1
+        l_cpFrame.visible = t1
+        cpFrame.visible = t1
+        l_cpPier.visible = t1
+        cpPier.visible = t1
+        l_cpGlass.visible = t1
+        cpGlass.visible = t1
+        l_cpDoor.visible = t1
+        cpDoor.visible = t1
+        l_cpShut.visible = t1
+        cpShut.visible = t1
+        l_cpRoof.visible = t1
+        cpRoof.visible = t1
+        l_cpPanel.visible = t1
+        cpPanel.visible = t1
 
         gb3.visible = t2
         l_spFloors.visible = t2
@@ -3679,6 +3790,15 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.6" width:430
         PR.doorH = spDoorH.value
         PR.cornice = cbCornice.checked
 
+        PR.colWall = cpWall.color
+        PR.colFrame = cpFrame.color
+        PR.colPier = cpPier.color
+        PR.colGlass = cpGlass.color
+        PR.colDoor = cpDoor.color
+        PR.colShut = cpShut.color
+        PR.colRoof = cpRoof.color
+        PR.colPanel = cpPanel.color
+
         PR.groundMode = FR_GroundCodes[ddGround.selection]
         PR.arcType = FR_ArcCodes[ddArc.selection]
         PR.arcRecess = spArcR.value
@@ -3734,6 +3854,15 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.6" width:430
         spEntW.value = PR.entranceFactor
         spDoorH.value = PR.doorH
         cbCornice.checked = PR.cornice
+
+        cpWall.color = PR.colWall
+        cpFrame.color = PR.colFrame
+        cpPier.color = PR.colPier
+        cpGlass.color = PR.colGlass
+        cpDoor.color = PR.colDoor
+        cpShut.color = PR.colShut
+        cpRoof.color = PR.colRoof
+        cpPanel.color = PR.colPanel
 
         local ei = findItem FR_EntCodes PR.entrance
         if ei == 0 do ei = 1
@@ -3947,6 +4076,14 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.6" width:430
             local vRoofO = FR_CSegs[FR_CurSeg].roofOver
             local vRoofPar = FR_CSegs[FR_CurSeg].roofPar
             local vRoofD = FR_CSegs[FR_CurSeg].roofDepth
+            local vColW = FR_CSegs[FR_CurSeg].colWall
+            local vColF = FR_CSegs[FR_CurSeg].colFrame
+            local vColP = FR_CSegs[FR_CurSeg].colPier
+            local vColG = FR_CSegs[FR_CurSeg].colGlass
+            local vColD = FR_CSegs[FR_CurSeg].colDoor
+            local vColS = FR_CSegs[FR_CurSeg].colShut
+            local vColR = FR_CSegs[FR_CurSeg].colRoof
+            local vColN = FR_CSegs[FR_CurSeg].colPanel
 
             for k = 1 to FR_CSegs.count do
             (
@@ -3988,6 +4125,14 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.6" width:430
                     FR_CSegs[k].roofOver = vRoofO
                     FR_CSegs[k].roofPar = vRoofPar
                     FR_CSegs[k].roofDepth = vRoofD
+                    FR_CSegs[k].colWall = vColW
+                    FR_CSegs[k].colFrame = vColF
+                    FR_CSegs[k].colPier = vColP
+                    FR_CSegs[k].colGlass = vColG
+                    FR_CSegs[k].colDoor = vColD
+                    FR_CSegs[k].colShut = vColS
+                    FR_CSegs[k].colRoof = vColR
+                    FR_CSegs[k].colPanel = vColN
                 )
             )
 
@@ -4563,6 +4708,14 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.6" width:430
                     PRk.surrS = PR1.surrS
                     PRk.surrProf = PR1.surrProf
                     PRk.arcPct = PR1.arcPct
+                    PRk.colWall = PR1.colWall
+                    PRk.colFrame = PR1.colFrame
+                    PRk.colPier = PR1.colPier
+                    PRk.colGlass = PR1.colGlass
+                    PRk.colDoor = PR1.colDoor
+                    PRk.colShut = PR1.colShut
+                    PRk.colRoof = PR1.colRoof
+                    PRk.colPanel = PR1.colPanel
                     PRk.roofMode = PR1.roofMode
                     PRk.roofPitch = PR1.roofPitch
                     PRk.roofOver = PR1.roofOver
@@ -4820,6 +4973,15 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.6" width:430
     on cbMerge changed state do FR_LiveTick()
     on cbArcGl changed state do FR_LiveTick()
     on cbSurr changed state do FR_LiveTick()
+
+    on cpWall changed c do FR_LiveTick()
+    on cpFrame changed c do FR_LiveTick()
+    on cpPier changed c do FR_LiveTick()
+    on cpGlass changed c do FR_LiveTick()
+    on cpDoor changed c do FR_LiveTick()
+    on cpShut changed c do FR_LiveTick()
+    on cpRoof changed c do FR_LiveTick()
+    on cpPanel changed c do FR_LiveTick()
 
     on ddUpper selected i do FR_LiveTick()
     on ddBalc selected i do FR_LiveTick()
