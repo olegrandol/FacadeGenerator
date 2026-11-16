@@ -3,6 +3,22 @@
     Générateur procédural de façades
     Autodesk 3ds Max 2026
 
+    NOUVEAU EN 0.6.5 :
+    - ENCADREMENT DES BAIES (onglet Fenêtres, groupe « Encadrement des baies ») :
+      une moulure d'assemblage est balayée autour de chaque ouverture (fenêtres
+      des étages et du rdc). Profil PAR DÉFAUT : bande de 7 cm, saillie 8 cm,
+      chanfreinée. Pour un profil personnalisé : créez-le avec « Créer un profil
+      carré » (onglet Moulures), modifiez ses sommets (x = largeur depuis la
+      baie, y = saillie vers la rue), puis choisissez-le avec le bouton « Profil »
+      de l'onglet Fenêtres. Échelle du profil réglable. Matériau de scène :
+      FRAMER_Moulding.
+    - GARDE-CORPS « LISSE SEULE » (nouveau choix du menu Garde-corps) : juste la
+      main courante, sans remplissage ni barreaux. S'applique aux fenêtres ET
+      aux balcons (le menu Garde-corps commande désormais aussi le type de
+      garde-corps des balcons : Vitré = panneaux de verre, Barreaudé = fer
+      forgé, Plein = panneaux opaques, Lisse seule, Aucun = dalle nue).
+    - LARGEUR DES CADRES PAR DÉFAUT : 7 cm (avant 12 cm) — cadre plus fin.
+
     CORRIGÉ EN 0.6.5 :
     - PRESETS : plantage « No "map" function » au chargement — les chaînes MAXScript
       ne sont PAS itérables (for c in "texte") : nettoyage du nom par index
@@ -187,7 +203,7 @@ global FR_LastRoot = undefined   -- façade actuellement en édition
 global FR_UpperCodes = #("Window","Glazed panel","Opaque panel","Plain wall","TownWin")
 global FR_BalcCodes = #("None","Out","In","Cont")
 global FR_EntCodes = #("None","Center","Left","Right","Random")
-global FR_RailCodes = #("None","Glass","Bars","Solid")
+global FR_RailCodes = #("None","Glass","Bars","Solid","Lisse")
 global FR_CapCodes = #("None","Slab","Lam")
 global FR_RoofCodes = #("None","Flat","Gable","Hip")
 
@@ -213,7 +229,7 @@ struct FRParams
     bays = 6,
     pier = 0.35,
     depth = 0.25,
-    fw = 0.12,
+    fw = 0.07,
     groundMode = "Storefront",
     upperMode = "Window",
     winPct = 70.0,
@@ -245,6 +261,10 @@ struct FRParams
     capMode = "None",
     capD = 0.4,
     capPct = 100.0,
+    -- encadrement des baies (moulure d'assemblage, commun à tout le bâtiment)
+    surr = false,
+    surrS = 1.0,
+    surrProf = "",
     -- toit (commun à tout le bâtiment)
     roofMode = "None",
     roofPitch = 30.0,
@@ -346,7 +366,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=6\n" to:ss
+    format "FRAMER_PARAMS=7\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -385,6 +405,9 @@ fn FR_ParamsToString PR =
     format "capMode=%\n" PR.capMode to:ss
     format "capD=%\n" (FR_F PR.capD) to:ss
     format "capPct=%\n" (FR_F PR.capPct) to:ss
+    format "surr=%\n" PR.surr to:ss
+    format "surrS=%\n" (FR_F PR.surrS) to:ss
+    format "surrProf=%\n" PR.surrProf to:ss
     format "roofMode=%\n" PR.roofMode to:ss
     format "roofPitch=%\n" (FR_F PR.roofPitch) to:ss
     format "roofOver=%\n" (FR_F PR.roofOver) to:ss
@@ -462,6 +485,9 @@ fn FR_ParamsFromString txt =
                 "capMode": PR.capMode = v
                 "capD": PR.capD = v as float
                 "capPct": PR.capPct = v as float
+                "surr": PR.surr = (v == "true")
+                "surrS": PR.surrS = v as float
+                "surrProf": PR.surrProf = v
                 "roofMode": PR.roofMode = v
                 "roofPitch": PR.roofPitch = v as float
                 "roofOver": PR.roofOver = v as float
@@ -652,8 +678,11 @@ fn FR_WinRail p a b c T fw basis frameMat glassMat railK railH railD =
             FR_LocalBox (p+"_Bar_"+(k as string)) (a + w*(k-0.5)/nb) rv (c+railH/2) 0.025 0.025 railH basis frameMat
     )
 
+    -- lisse (main courante) toujours présente ; « Lisse » = garde-corps réduit à la seule lisse
     FR_LocalBox (p+"_RailHand") ((a+b)/2) rv (c+railH+0.025) w (railD+0.04) 0.05 basis frameMat
-    FR_LocalBox (p+"_RailFoot") ((a+b)/2) rv (c+0.015) w (railD+0.04) 0.03 basis frameMat
+
+    if railK != "Lisse" do
+        FR_LocalBox (p+"_RailFoot") ((a+b)/2) rv (c+0.015) w (railD+0.04) 0.03 basis frameMat
 )
 
 -- volet roulant simulé : coffre au-dessus de la fenêtre + panneau descendant du coffre
@@ -712,12 +741,48 @@ fn FR_ShutterBattant p a b c winH T fw basis mat openPct =
 )
 
 /* =========================================================
+   ENCADREMENT DE BAIE (moulure d'assemblage) : le profil est balayé autour
+   de l'ouverture (a..b, c..d). prof = points 2D (x = largeur depuis la baie,
+   y = saillie vers la rue), déjà mis à l'échelle. Réutilise FR_SweepMesh
+   (onglets d'angle) en remappant les sommets vers le repère de la façade.
+========================================================= */
+
+fn FR_Surround nm a b c d basis mat prof =
+(
+    if prof != undefined and prof.count >= 2 then
+    (
+        -- chemin fermé autour de la baie, dans l'espace du sweep (x=u, y=z, z=rue)
+        local pts = #([a, c, 0], [b, c, 0], [b, d, 0], [a, d, 0])
+        local m = FR_SweepMesh pts prof true
+
+        -- remappage : u = x, z = y, v (rue) = -z — rotation directe, winding conservé
+        for i = 1 to (numverts m) do
+        (
+            local q = getVert m i
+            setVert m i (basis[4] + basis[1]*q.x + basis[2]*(-q.z) + basis[3]*q.y)
+        )
+
+        update m
+
+        m.name = nm
+        m.material = mat
+
+        append FR_Pool m
+
+        m
+    )
+    else
+        undefined
+)
+
+/* =========================================================
    MUR AVEC OUVERTURE CENTRÉE (trumeaux, allège, linteau + fenêtre)
-   Options facultatives (mots-clés) : garde-corps, volet, casquette
+   Options facultatives (mots-clés) : garde-corps, volet, casquette,
+   encadrement de baie (surrProf + surrMat)
    Renvoie #(a, a+winW, c, c+winH) : rectangle de la fenêtre, ou undefined
 ========================================================= */
 
-fn FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat winW winH sill railK:"None" railH:1.0 railD:0.15 shutOpen:-1.0 capK:"None" capD:0.4 =
+fn FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat winW winH sill railK:"None" railH:1.0 railD:0.15 shutOpen:-1.0 capK:"None" capD:0.4 surrProf:undefined surrMat:undefined =
 (
     local bw = bu2-bu1
     local h = z2-z1
@@ -742,6 +807,10 @@ fn FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat winW winH 
         FR_WallRect (p+"_Lintel") a (a+winW) (c+winH) z2 T basis wallMat
 
         FR_Glass p a (a+winW) c (c+winH) T fw basis frameMat glassMat 1
+
+        -- encadrement de baie (moulure d'assemblage balayée autour de l'ouverture)
+        if surrProf != undefined and surrMat != undefined do
+            FR_Surround (p+"_Surr") a (a+winW) c (c+winH) basis surrMat surrProf
 
         if railK != "None" and sill > 0.05 do
             FR_WinRail p a (a+winW) c T fw basis frameMat glassMat railK (amin #(railH, winH)) railD
@@ -774,7 +843,7 @@ fn FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat winW winH 
    proj = saillie au-delà des piliers
 ========================================================= */
 
-fn FR_Balcony p bu1 bu2 z depth proj basis slabMat railMat glassMat =
+fn FR_Balcony p bu1 bu2 z depth proj basis slabMat railMat glassMat railK:"Glass" =
 (
     local outer = -depth - proj
     local inner = -depth*0.5
@@ -784,10 +853,41 @@ fn FR_Balcony p bu1 bu2 z depth proj basis slabMat railMat glassMat =
     local bw = bu2-bu1
 
     FR_LocalBox (p+"_Slab") uc cv (z+0.075) bw sy 0.15 basis slabMat
-    FR_LocalBox (p+"_Rail") uc (outer+0.02) (z+0.65) bw 0.03 1.0 basis glassMat
+
+    -- garde-corps du balcon : suit le type choisi pour les garde-corps de fenêtres
+    -- (« Aucun » garde le vitré par sécurité ; « Lisse » : seulement la main courante)
+    local rk = if railK == "None" then "Glass" else railK
+
+    if rk == "Glass" then
+    (
+        FR_LocalBox (p+"_Rail") uc (outer+0.02) (z+0.65) bw 0.03 1.0 basis glassMat
+        FR_LocalBox (p+"_RailL") (bu1+0.015) cv (z+0.65) 0.03 sy 1.0 basis glassMat
+        FR_LocalBox (p+"_RailR") (bu2-0.015) cv (z+0.65) 0.03 sy 1.0 basis glassMat
+    )
+    else if rk == "Solid" then
+    (
+        FR_LocalBox (p+"_RailP") uc (outer+0.02) (z+0.65) bw 0.04 1.0 basis railMat
+        FR_LocalBox (p+"_RailL") (bu1+0.015) cv (z+0.65) 0.04 sy 1.0 basis railMat
+        FR_LocalBox (p+"_RailR") (bu2-0.015) cv (z+0.65) 0.04 sy 1.0 basis railMat
+    )
+    else if rk == "Bars" then
+    (
+        local nb = 1 + ((bw/0.18) as integer)
+
+        for k = 1 to nb do
+            FR_LocalBox (p+"_Bar_"+(k as string)) (bu1 + bw*(k-0.5)/nb) (outer+0.02) (z+0.65) 0.025 0.025 1.0 basis railMat
+
+        local ns = 1 + ((sy/0.18) as integer)
+
+        for k = 1 to ns do
+        (
+            FR_LocalBox (p+"_BarL_"+(k as string)) (bu1+0.015) (outer + sy*(k-0.5)/ns) (z+0.65) 0.025 0.025 1.0 basis railMat
+            FR_LocalBox (p+"_BarR_"+(k as string)) (bu2-0.015) (outer + sy*(k-0.5)/ns) (z+0.65) 0.025 0.025 1.0 basis railMat
+        )
+    )
+
+    -- lisse haute (toujours)
     FR_LocalBox (p+"_RailTop") uc (outer+0.02) (z+1.17) bw 0.06 0.04 basis railMat
-    FR_LocalBox (p+"_RailL") (bu1+0.015) cv (z+0.65) 0.03 sy 1.0 basis glassMat
-    FR_LocalBox (p+"_RailR") (bu2-0.015) cv (z+0.65) 0.03 sy 1.0 basis glassMat
 )
 
 /* =========================================================
@@ -1841,6 +1941,26 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
     local doorMat = FR_Material "FRAMER_Door" (color 95 72 52) 100
     local wallMat = FR_Material "FRAMER_Walls" (color 214 204 188) 100
 
+    -- encadrement des baies : profil (spline choisie ou carré par défaut) + matériau
+    local surrP = undefined
+    local surrM = undefined
+
+    if PR.surr do
+    (
+        surrM = FR_Material "FRAMER_Moulding" (color 200 196 188) 100
+
+        local sn = if PR.surrProf != "" then (try(getNodeByName PR.surrProf)catch(undefined)) else undefined
+
+        if sn != undefined and (isValidNode sn) and (superclassof sn) == shape then
+            surrP = FR_ReadProfile sn PR.surrS
+        else
+        (
+            -- profil par défaut : bande de 7 cm, saillie 8 cm, chanfreinée
+            local defP = #([0.0,0.0], [0.07,0.0], [0.07,0.05], [0.035,0.08], [0.0,0.05])
+            surrP = for q in defP collect [q.x*PR.surrS, q.y*PR.surrS]
+        )
+    )
+
     local bu1 = 0.0
     local bu2 = 0.0
     local z1 = 0.0
@@ -1982,7 +2102,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
             )
 
             -- volets battants à deux vantaux sur toutes les fenêtres du rdc
-            local wr = FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat wW wH 0.9 capK:capK capD:PR.capD
+            local wr = FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat wW wH 0.9 capK:capK capD:PR.capD surrProf:surrP surrMat:surrM
 
             if wr != undefined do
                 FR_ShutterBattant p (wr[1]) (wr[2]) (wr[3]) (wr[4]-wr[3]) T fw basis (FR_Material "FRAMER_Shutters" (color 172 166 152) 100) PR.shutOpen
@@ -2080,14 +2200,14 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
 
                     if variant == "Window" then
                     (
-                        wr = FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat (bw*fWin/100.0) fHt fSill railK:railK railH:PR.railH railD:PR.railD shutOpen:shutOpen capK:capK capD:PR.capD
+                        wr = FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat (bw*fWin/100.0) fHt fSill railK:railK railH:PR.railH railD:PR.railD shutOpen:shutOpen capK:capK capD:PR.capD surrProf:surrP surrMat:surrM
                     )
                     else
                     (
                         local wideW = amin #((bw*(fWin+15.0)/100.0), (bw*0.92))
                         local wideH = amin #(2.3, (uH-0.25))
 
-                        wr = FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat wideW wideH 0.0 railK:railK railH:PR.railH railD:PR.railD shutOpen:shutOpen capK:capK capD:PR.capD
+                        wr = FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat wideW wideH 0.0 railK:railK railH:PR.railH railD:PR.railD shutOpen:shutOpen capK:capK capD:PR.capD surrProf:surrP surrMat:surrM
                     )
 
                     -- volets battants à deux vantaux (style maison de ville)
@@ -2096,7 +2216,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
 
                     -- balcon saillant : réglage d'étage (kind) OU variante tirée au hasard
                     if kind == "Out" or variant == "Balcony" do
-                        FR_Balcony p bu1 bu2 z1 depth bd basis pierMat frameMat glassMat
+                        FR_Balcony p bu1 bu2 z1 depth bd basis pierMat frameMat glassMat railK:PR.railMode
                 )
             )
             else if fm == "Glazed panel" then
@@ -2126,7 +2246,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
             if PR.balcVar > 0.0 do
                 bdC = amax #(0.3, balcD * (1.0 + ((random -1.0 1.0) * PR.balcVar/100.0)))
 
-            FR_Balcony (pf+"_Cont") (-endM) (width+endM) z1 depth bdC basis pierMat frameMat glassMat
+            FR_Balcony (pf+"_Cont") (-endM) (width+endM) z1 depth bdC basis pierMat frameMat glassMat railK:PR.railMode
         )
     )
 
@@ -3014,7 +3134,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
     label l_spDepth "Profondeur de façade :" pos:[25,454] width:185 height:16
     spinner spDepth "" pos:[215,452] width:190 range:[0.02,3,0.25] type:#float scale:0.05 tooltip:"Saillie des piliers et des bandeaux. Le mur est en retrait de la moitié de cette valeur."
     label l_spFrame "Largeur des cadres :" pos:[25,482] width:185 height:16
-    spinner spFrame "" pos:[215,480] width:190 range:[0.01,1,0.12] type:#float scale:0.01 tooltip:"Épaisseur des cadres de fenêtres et des bandeaux."
+    spinner spFrame "" pos:[215,480] width:190 range:[0.01,1,0.07] type:#float scale:0.01 tooltip:"Épaisseur des cadres de fenêtres et des bandeaux."
     checkbox cbCornice "Corniche en haut" pos:[25,508] checked:true tooltip:"Ajoute une corniche en haut de la façade."
     checkbox cbMerge "Fusionner en un objet par matériau" pos:[25,528] checked:true tooltip:"Regroupe la façade en un objet par matériau (plus léger). Décoché : chaque élément reste séparé."
 
@@ -3066,7 +3186,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
     /* ----- onglet 4 : Fenêtres (garde-corps, volets, casquettes) ----- */
 
     groupBox gb10 "Garde-corps de fenêtres" pos:[10,160] width:410 height:120
-    dropdownList ddRail "Type :" pos:[25,182] width:380 items:#("Aucun","Vitré","Barreaudé","Plein") selection:1 tooltip:"Garde-corps devant l'allège des fenêtres à allège."
+    dropdownList ddRail "Type :" pos:[25,182] width:380 items:#("Aucun","Vitré","Barreaudé","Plein","Lisse seule") selection:1 tooltip:"Garde-corps devant l'allège des fenêtres à allège. Lisse seule : juste la main courante, sans remplissage."
     label l_spRailH "Hauteur du garde-corps :" pos:[25,232] width:185 height:16
     spinner spRailH "" pos:[215,230] width:190 range:[0.3,2,1.0] type:#float scale:0.05 tooltip:"Hauteur du garde-corps, limitée à la hauteur de la fenêtre."
     label l_spRailD "Saillie du garde-corps :" pos:[25,260] width:185 height:16
@@ -3083,6 +3203,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
     spinner spCapD "" pos:[215,476] width:190 range:[0.1,1.5,0.4] type:#float scale:0.05 tooltip:"Saillie de la casquette ou des lames."
     label l_spCapPct "Probabilité (% des fenêtres) :" pos:[25,506] width:185 height:16
     spinner spCapPct "" pos:[215,504] width:190 range:[0,100,100] type:#float scale:1 tooltip:"100 % : toutes les fenêtres. Sinon, tirage au hasard par travée."
+    groupBox gb13 "Encadrement des baies (moulure)" pos:[10,554] width:410 height:130
+    checkbox cbSurr "Encadrer les baies (étages et rdc)" pos:[25,578] tooltip:"Balaie une moulure d'assemblage autour de chaque ouverture."
+    pickbutton pbSurrProf "Profil : (carré par défaut)" pos:[25,604] width:380 height:24 filter:FR_ShapeFilter autoDisplay:true message:"Cliquez sur la spline du profil" tooltip:"Spline du profil de la moulure (créable avec « Créer un profil carré », onglet Moulures). Sans spline : profil carré par défaut."
+    label l_spSurrS "Échelle du profil :" pos:[25,642] width:185 height:16
+    spinner spSurrS "" pos:[215,640] width:190 range:[0.05,20,1] type:#float scale:0.05 tooltip:"Échelle appliquée au profil de la moulure."
+    label lbSurrHelp "Profil : x = largeur depuis la baie, y = saillie vers la rue. Sans spline : bande 7 cm, saillie 8 cm." pos:[25,668] width:380 height:16
 
     /* ----- onglet 5 : Toit ----- */
 
@@ -3129,26 +3255,26 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
 
     /* ----- bas de fenêtre ----- */
 
-    button btGenerate "GÉNÉRER" pos:[10,600] width:205 height:32 tooltip:"Crée une nouvelle façade (ou tout le contour) avec les réglages affichés (mode création)."
-    button btUpdate "METTRE À JOUR" pos:[215,600] width:205 height:32 tooltip:"Reconstruit la façade sélectionnée avec les réglages affichés (mode édition)."
-    button btLoad "Charger la sélection" pos:[10,638] width:205 height:24 tooltip:"Charge dans la fenêtre les réglages de la façade sélectionnée."
-    button btDelete "Supprimer la sélection" pos:[215,638] width:205 height:24 tooltip:"Supprime la façade sélectionnée."
+    button btGenerate "GÉNÉRER" pos:[10,700] width:205 height:32 tooltip:"Crée une nouvelle façade (ou tout le contour) avec les réglages affichés (mode création)."
+    button btUpdate "METTRE À JOUR" pos:[215,700] width:205 height:32 tooltip:"Reconstruit la façade sélectionnée avec les réglages affichés (mode édition)."
+    button btLoad "Charger la sélection" pos:[10,738] width:205 height:24 tooltip:"Charge dans la fenêtre les réglages de la façade sélectionnée."
+    button btDelete "Supprimer la sélection" pos:[215,738] width:205 height:24 tooltip:"Supprime la façade sélectionnée."
 
     -- mode contour : réglages du segment affiché
-    label l_spSeg "Segment n° :" pos:[15,672] width:110 height:16
-    spinner spSeg "" pos:[130,670] width:80 range:[1,1,1] type:#integer tooltip:"Segment du contour dont vous modifiez les réglages (côté rue, côté jardin...)." enabled:false
-    button btCopySeg "Appliquer ce segment à tous" pos:[230,668] width:190 height:22 tooltip:"Copie les réglages horizontaux du segment affiché sur tous les autres segments." enabled:false
+    label l_spSeg "Segment n° :" pos:[15,772] width:110 height:16
+    spinner spSeg "" pos:[130,770] width:80 range:[1,1,1] type:#integer tooltip:"Segment du contour dont vous modifiez les réglages (côté rue, côté jardin...)." enabled:false
+    button btCopySeg "Appliquer ce segment à tous" pos:[230,768] width:190 height:22 tooltip:"Copie les réglages horizontaux du segment affiché sur tous les autres segments." enabled:false
 
     /* ----- presets ----- */
 
-    groupBox gbPreset "Presets (réglages sauvegardés)" pos:[10,756] width:410 height:92
-    dropdownList ddPreset "" pos:[25,776] width:320 items:#() tooltip:"Presets enregistrés. Sélectionnez-en un puis cliquez Charger."
-    button btPresetRefresh "↻" pos:[350,774] width:28 height:22 tooltip:"Réactualise la liste des presets et affiche le dossier utilisé dans la barre d'infos."
-    button btPresetBrowse "…" pos:[382,774] width:28 height:22 tooltip:"Charger un preset depuis n'importe quel dossier (parcourir…)."
-    edittext etPresetName "Nom :" pos:[25,806] width:170 height:20 tooltip:"Nom du preset à sauvegarder (ou à charger s'il existe déjà)."
-    button btPresetSave "Sauver" pos:[205,804] width:62 height:22 tooltip:"Sauvegarde tous les réglages affichés sous le nom saisi."
-    button btPresetLoad "Charger" pos:[271,804] width:62 height:22 tooltip:"Charge le preset sélectionné dans la liste (ou celui dont le nom est saisi)."
-    button btPresetDel "Suppr." pos:[337,804] width:62 height:22 tooltip:"Supprime le preset sélectionné dans la liste (ou celui dont le nom est saisi)."
+    groupBox gbPreset "Presets (réglages sauvegardés)" pos:[10,806] width:410 height:92
+    dropdownList ddPreset "" pos:[25,826] width:320 items:#() tooltip:"Presets enregistrés. Sélectionnez-en un puis cliquez Charger."
+    button btPresetRefresh "↻" pos:[350,824] width:28 height:22 tooltip:"Réactualise la liste des presets et affiche le dossier utilisé dans la barre d'infos."
+    button btPresetBrowse "…" pos:[382,824] width:28 height:22 tooltip:"Charger un preset depuis n'importe quel dossier (parcourir…)."
+    edittext etPresetName "Nom :" pos:[25,856] width:170 height:20 tooltip:"Nom du preset à sauvegarder (ou à charger s'il existe déjà)."
+    button btPresetSave "Sauver" pos:[205,854] width:62 height:22 tooltip:"Sauvegarde tous les réglages affichés sous le nom saisi."
+    button btPresetLoad "Charger" pos:[271,854] width:62 height:22 tooltip:"Charge le preset sélectionné dans la liste (ou celui dont le nom est saisi)."
+    button btPresetDel "Suppr." pos:[337,854] width:62 height:22 tooltip:"Supprime le preset sélectionné dans la liste (ou celui dont le nom est saisi)."
 
     label lbInfo "Mode création." pos:[15,856] width:400 height:30
     label lbLegend "F fenêtre | P porte-fenêtre | B balcon | M mur plein" pos:[15,890] width:400 height:16
@@ -3243,6 +3369,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
         spCapD.visible = t4
         l_spCapPct.visible = t4
         spCapPct.visible = t4
+        gb13.visible = t4
+        cbSurr.visible = t4
+        pbSurrProf.visible = t4
+        l_spSurrS.visible = t4
+        spSurrS.visible = t4
+        lbSurrHelp.visible = t4
 
         gbRoof.visible = t5
         ddRoof.visible = t5
@@ -3418,6 +3550,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
         PR.capD = spCapD.value
         PR.capPct = spCapPct.value
 
+        PR.surr = cbSurr.checked
+        PR.surrS = spSurrS.value
+        PR.surrProf = (if pbSurrProf.object != undefined and (isValidNode pbSurrProf.object) then pbSurrProf.object.name else "")
+
         PR.roofMode = FR_RoofCodes[ddRoof.selection]
         PR.roofPitch = spRoofPitch.value
         PR.roofOver = spRoofOver.value
@@ -3520,6 +3656,19 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
         ddCap.selection = ci
         spCapD.value = PR.capD
         spCapPct.value = PR.capPct
+
+        cbSurr.checked = PR.surr
+        spSurrS.value = PR.surrS
+
+        local su = undefined
+
+        if PR.surrProf != "" do
+            su = try(getNodeByName PR.surrProf)catch(undefined)
+
+        if su != undefined and (superclassof su) != shape do su = undefined
+
+        pbSurrProf.object = su
+        pbSurrProf.caption = (if su != undefined then su.name else "Profil : (carré par défaut)")
 
         local roi = findItem FR_RoofCodes PR.roofMode
         if roi == 0 do roi = 1
@@ -3680,6 +3829,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
             local vCapK = FR_CSegs[FR_CurSeg].capMode
             local vCapD = FR_CSegs[FR_CurSeg].capD
             local vCapP = FR_CSegs[FR_CurSeg].capPct
+            local vSurr = FR_CSegs[FR_CurSeg].surr
+            local vSurrS = FR_CSegs[FR_CurSeg].surrS
+            local vSurrProf = FR_CSegs[FR_CurSeg].surrProf
             local vRoofK = FR_CSegs[FR_CurSeg].roofMode
             local vRoofP = FR_CSegs[FR_CurSeg].roofPitch
             local vRoofO = FR_CSegs[FR_CurSeg].roofOver
@@ -3717,6 +3869,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
                     FR_CSegs[k].capMode = vCapK
                     FR_CSegs[k].capD = vCapD
                     FR_CSegs[k].capPct = vCapP
+                    FR_CSegs[k].surr = vSurr
+                    FR_CSegs[k].surrS = vSurrS
+                    FR_CSegs[k].surrProf = vSurrProf
                     FR_CSegs[k].roofMode = vRoofK
                     FR_CSegs[k].roofPitch = vRoofP
                     FR_CSegs[k].roofOver = vRoofO
@@ -4293,6 +4448,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
                     PRk.capMode = PR1.capMode
                     PRk.capD = PR1.capD
                     PRk.capPct = PR1.capPct
+                    PRk.surr = PR1.surr
+                    PRk.surrS = PR1.surrS
+                    PRk.surrProf = PR1.surrProf
                     PRk.roofMode = PR1.roofMode
                     PRk.roofPitch = PR1.roofPitch
                     PRk.roofOver = PR1.roofOver
@@ -4534,6 +4692,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
     on spCapD entered do FR_LiveTick()
     on spCapPct buttonup do FR_LiveTick()
     on spCapPct entered do FR_LiveTick()
+    on spSurrS buttonup do FR_LiveTick()
+    on spSurrS entered do FR_LiveTick()
     on spArcR buttonup do FR_LiveTick()
     on spArcR entered do FR_LiveTick()
     on spArcL buttonup do FR_LiveTick()
@@ -4545,12 +4705,14 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
     on cbCornice changed state do FR_LiveTick()
     on cbMerge changed state do FR_LiveTick()
     on cbArcGl changed state do FR_LiveTick()
+    on cbSurr changed state do FR_LiveTick()
 
     on ddUpper selected i do FR_LiveTick()
     on ddBalc selected i do FR_LiveTick()
     on ddEntrance selected i do FR_LiveTick()
     on ddRail selected i do FR_LiveTick()
     on ddCap selected i do FR_LiveTick()
+    on pbSurrProf picked obj do FR_LiveTick()
     on ddGround selected i do
     (
         UpdateArcUI()

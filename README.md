@@ -11,6 +11,30 @@ guides d'étages et moulures balayées).
 2. Dans 3ds Max : menu *Scripting > Run Script…* et choisir le fichier.
 3. La fenêtre FRAMER s'ouvre (mode création / mode édition).
 
+## Version 0.6.5
+
+- **Encadrement des baies (moulure d'assemblage)** (onglet Fenêtres, groupe
+  *Encadrement des baies*) : une moulure est balayée autour de chaque ouverture
+  (fenêtres des étages et du rdc maison de ville). Profil par défaut : bande de
+  **7 cm**, saillie 8 cm, chanfreinée. Profil personnalisé : créez-le avec
+  *Créer un profil carré* (onglet Moulures), éditez ses sommets (x = largeur
+  depuis la baie, y = saillie vers la rue), puis choisissez-le avec le bouton
+  *Profil* ; échelle réglable. Matériau de scène : `FRAMER_Moulding`.
+- **Garde-corps « Lisse seule »** (nouveau choix du menu Garde-corps) : juste
+  la main courante, sans remplissage. Le menu Garde-corps commande désormais
+  aussi le type de garde-corps des **balcons** (Vitré / Barreaudé / Plein /
+  Lisse seule / Aucun = dalle nue).
+- **Largeur des cadres par défaut : 7 cm** (avant 12 cm).
+- **Presets** : plantage « No "map" function » corrigé (les chaînes MAXScript
+  ne sont pas itérables) ; bouton « … » pour charger un preset depuis
+  n'importe quel dossier ; bouton « ↻ » et chemin du dossier affiché.
+- **Correction majeure** : `copy <array>` renvoie `OK` en MAXScript (pas une
+  copie !) — toutes les copies de tableaux (presets, segments de contour,
+  étages indépendants) se partagent la même référence, ce qui provoquait des
+  réglages qui « fuyaient » d'un étage/segment à l'autre. Remplacées par une
+  copie élément par élément (`FR_CopyArr`).
+- Plus de **garde-corps en double** derrière les balcons.
+
 ## Version 0.6.4
 
 - **Onglets réordonnés** : Général, **Rdc**, Étages, Fenêtres, Toit, **Hasard**
