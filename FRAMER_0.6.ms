@@ -243,10 +243,12 @@ fn FR_NoSmooth obj =
 (
     if obj != undefined and isValidNode obj do
     (
-        if (classof obj) == Editable_Poly then
+        -- seuls les Editable Poly exposent les groupes de lissage via polyop :
+        -- les mailles sont converties (FR_Merge les convertit de toute façon)
+        if (classof obj) == Editable_mesh do convertToPoly obj
+
+        if (classof obj) == Editable_Poly do
             polyop.setFaceSmoothGroup obj #{1..(polyop.getNumFaces obj)} 0
-        else if (classof obj) == Editable_mesh then
-            meshop.setFaceSmoothGroup obj #{1..obj.numfaces} 0
     )
 )
 
