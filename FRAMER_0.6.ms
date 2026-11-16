@@ -3579,8 +3579,11 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         local names = FR_PresetNames()
         local sel = ddPreset.selected
 
+        -- liste vide : .selected vaut undefined (et non 0)
+        if sel == undefined do sel = 0
+
         ddPreset.items = names
-        ddPreset.selected = (if sel <= names.count then sel else 0)
+        ddPreset.selected = (if sel >= 1 and sel <= names.count then sel else 0)
     )
 
     fn FR_PresetApply nm =
@@ -3641,8 +3644,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
 
     on btPresetLoad pressed do
     (
-        if ddPreset.selected > 0 then
-            FR_PresetApply ddPreset.items[ddPreset.selected]
+        local sel = ddPreset.selected
+
+        if sel == undefined do sel = 0
+
+        if sel > 0 then
+            FR_PresetApply ddPreset.items[sel]
         else if (FR_PresetCleanName etPresetName.text) != "" then
             FR_PresetApply (FR_PresetCleanName etPresetName.text)
         else
@@ -3651,7 +3658,11 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
 
     on btPresetDel pressed do
     (
-        local nm = if ddPreset.selected > 0 then ddPreset.items[ddPreset.selected]
+        local sel = ddPreset.selected
+
+        if sel == undefined do sel = 0
+
+        local nm = if sel > 0 then ddPreset.items[sel]
                    else (FR_PresetCleanName etPresetName.text)
 
         if nm == "" then
