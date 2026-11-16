@@ -3583,7 +3583,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         if sel == undefined do sel = 0
 
         ddPreset.items = names
-        ddPreset.selected = (if sel >= 1 and sel <= names.count then sel else 0)
+
+        -- affecter .selected (même 0) sur une liste vide lève "No current selection"
+        if names.count > 0 and sel >= 1 do
+            ddPreset.selected = (amin #(sel, names.count))
     )
 
     fn FR_PresetApply nm =
