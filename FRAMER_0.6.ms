@@ -1827,7 +1827,7 @@ fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat =
 fn FR_RoofContour pts segPRs bases totalH =
 (
     local PR0 = segPRs[1]
-    local roofMat = FR_Material "FRAMER_Roof" PR0.colRoof 100 true
+    local roofMat = FR_Material "FRAMER_Roof" PR0.colRoof 100 apply:true
 
     -- le toit part du contour décalé vers l'extérieur (débord), avec un fond fermé vu de dessous
     local oPts = FR_OffsetContour pts PR0.roofOver
@@ -2097,17 +2097,17 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
     local T = depth*0.5
     FR_VC = -depth*0.25
 
-    local frameMat = FR_Material "FRAMER_Frame" PR.colFrame 100 true
-    local pierMat = FR_Material "FRAMER_Piers" PR.colPier 100 true
-    local glassMat = FR_Material "FRAMER_Glass" PR.colGlass 42 true
-    local panelMat = FR_Material "FRAMER_Panels" PR.colPanel 100 true
-    local doorMat = FR_Material "FRAMER_Door" PR.colDoor 100 true
-    local wallMat = FR_Material "FRAMER_Walls" PR.colWall 100 true
+    local frameMat = FR_Material "FRAMER_Frame" PR.colFrame 100 apply:true
+    local pierMat = FR_Material "FRAMER_Piers" PR.colPier 100 apply:true
+    local glassMat = FR_Material "FRAMER_Glass" PR.colGlass 42 apply:true
+    local panelMat = FR_Material "FRAMER_Panels" PR.colPanel 100 apply:true
+    local doorMat = FR_Material "FRAMER_Door" PR.colDoor 100 apply:true
+    local wallMat = FR_Material "FRAMER_Walls" PR.colWall 100 apply:true
 
     -- pré-créer les matériaux utilisés en ligne ailleurs (volets, moulure) :
     -- les appels inline réutilisent le cache sans avoir besoin des couleurs
-    FR_Material "FRAMER_Shutters" PR.colShut 100 true
-    FR_Material "FRAMER_Moulding" PR.colWall 100 true
+    FR_Material "FRAMER_Shutters" PR.colShut 100 apply:true
+    FR_Material "FRAMER_Moulding" PR.colWall 100 apply:true
 
     -- encadrement des baies : profil (spline choisie ou carré par défaut) + matériau
     local surrP = undefined
@@ -2458,7 +2458,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
     -- (il suit le contour décalé) : pas de toit rectangulaire par segment
     if PR.roofMode != "None" and not noRoof do
     (
-        local roofMat = FR_Material "FRAMER_Roof" PR.colRoof 100 true
+        local roofMat = FR_Material "FRAMER_Roof" PR.colRoof 100 apply:true
 
         -- rectangle couvert : du plan des piliers (v = -depth) vers l'arrière (roofDepth)
         local bR = matrix3 basis[1] basis[2] basis[3] (basis[4] + basis[2]*(-depth))
@@ -2785,7 +2785,7 @@ fn FR_BuildContour pts segPRs root doMerge =
         -- colonnes d'angle, centrées sur chaque sommet du contour
         if ok do
         (
-            local pierMat = FR_Material "FRAMER_Piers" PR0.colPier 100 true
+            local pierMat = FR_Material "FRAMER_Piers" PR0.colPier 100 apply:true
 
             for k = 1 to pts.count do
             (
