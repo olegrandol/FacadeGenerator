@@ -13,6 +13,10 @@ guides d'étages et moulures balayées).
 
 ## Version 0.6.4
 
+- **Volets battants corrigés** : ils débordaient au-dessus des fenêtres (aux
+  étages comme au rdc).
+- **Fond de galerie** : mur opaque ajouté derrière le vitrage reculé des
+  arcades en arc et du portique (on ne voit plus à travers la galerie).
 - **Placement corrigé** : la façade apparaissait au mauvais endroit en mode
   « Sur une face sélectionnée » ou « Le long d'un contour fermé » dès que la
   face ou la spline avait été déplacée/rotée après création (double

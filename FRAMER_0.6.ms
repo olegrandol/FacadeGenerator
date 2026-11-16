@@ -4,6 +4,12 @@
     Autodesk 3ds Max 2026
 
     CORRIGÉ EN 0.6.4 :
+    - VOLETS BATTANTS : ils débordaient au-dessus des fenêtres (la hauteur
+      absolue du haut de fenêtre était passée comme hauteur de volet) — aux
+      étages comme au rez-de-chaussée.
+    - FOND DE GALERIE : les arcades en arc et le portique n'avaient pas de fond
+      — on voyait à travers le vitrage reculé jusqu'au fond du viewport. Un mur
+      opaque ferme maintenant la galerie juste derrière le vitrage.
     - PLACEMENT : la façade générée en mode « Sur une face sélectionnée » ou
       « Le long d'un contour fermé » n'apparaissait pas à l'endroit de la face
       ou du contour dès que celui-ci avait été déplacé/roté après création
@@ -991,6 +997,12 @@ fn FR_Arcade p bu1 bu2 groundH T depth recess lintelH arcType fw basis frameMat 
     else
         FR_Glass p bu1 bu2 0.0 crown T fw basis frameMat glassMat 1
 
+    -- fond de galerie : mur opaque juste derrière le vitrage reculé
+    -- (bouche la vue à travers la galerie, arcades en arc comme portique)
+    FR_VC = vfa + recess + T + 0.06
+
+    FR_WallRect (p+"_Back") bu1 bu2 0.0 crown 0.1 basis wallMat
+
     FR_VC = oldVC
 )
 
@@ -1814,7 +1826,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
             local wr = FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat wW wH 0.9 capK:capK capD:PR.capD
 
             if wr != undefined do
-                FR_ShutterBattant p (wr[1]) (wr[2]) (wr[3]) (wr[4]) T fw basis (FR_Material "FRAMER_Shutters" (color 172 166 152) 100) PR.shutOpen
+                FR_ShutterBattant p (wr[1]) (wr[2]) (wr[3]) (wr[4]-wr[3]) T fw basis (FR_Material "FRAMER_Shutters" (color 172 166 152) 100) PR.shutOpen
         )
         -- "Empty bay" : passage ouvert, rien n'est généré
     )
@@ -1911,7 +1923,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
 
                     -- volets battants à deux vantaux (style maison de ville)
                     if fm == "TownWin" and wr != undefined do
-                        FR_ShutterBattant p (wr[1]) (wr[2]) (wr[3]) (wr[4]) T fw basis (FR_Material "FRAMER_Shutters" (color 172 166 152) 100) PR.shutOpen
+                        FR_ShutterBattant p (wr[1]) (wr[2]) (wr[3]) (wr[4]-wr[3]) T fw basis (FR_Material "FRAMER_Shutters" (color 172 166 152) 100) PR.shutOpen
 
                     -- balcon saillant : réglage d'étage (kind) OU variante tirée au hasard
                     if kind == "Out" or variant == "Balcony" do
