@@ -13,6 +13,14 @@ guides d'étages et moulures balayées).
 
 ## Version 0.6.4
 
+- **Panneaux pleins / vitrés alternés** (onglet Étages) : pour le type
+  *Panneaux pleins*, le réglage *Panneaux pleins (% des travées)* tire au
+  hasard, par travée, un panneau plein ou un panneau vitré (100 % = tous
+  pleins, 0 % = tous vitrés).
+- **Profondeur de balcons aléatoire** (onglet Étages) : *Variation de
+  profondeur (± %)* — la profondeur des balcons saillants, loggias et du
+  balcon filant varie au hasard par travée autour de la profondeur réglée
+  (0 = profondeur fixe).
 - **Lissage supprimé** : tous les groupes de lissage sont retirés (arêtes
   vives, rendu facetté) sur les objets fusionnés comme sur les arches et toits.
 - **Haut des arches / plafond de galerie** : l'arc se prolonge maintenant en

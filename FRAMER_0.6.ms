@@ -46,6 +46,14 @@
       coordonnées locales, comme prévu.
 
     NOUVEAU EN 0.6.4 :
+    - PANNEAUX PLEINS / VITRÉS ALTERNÉS (onglet Étages) : pour le type
+      « Panneaux pleins », un réglage « Panneaux pleins (% des travées) » tire
+      au hasard, par travée, un panneau PLEIN ou un panneau VITRÉ. 100 % :
+      tous pleins (comme avant). 0 % : tous vitrés.
+    - PROFONDEUR DE BALCONS ALÉATOIRE (onglet Étages) : « Variation de
+      profondeur (± %) » — la profondeur des balcons saillants, loggias et
+      balcon filant varie au hasard, par travée, autour de la profondeur
+      réglée (0 = profondeur fixe, comme avant).
     - VOLETS BATTANTS À DEUX VANTAUX : vrais volets à pivoter, fermés devant la
       fenêtre (ouverture 0 %) ou ouverts à plat contre le mur (100 %), rotation
       réelle intermédiaire. Le réglage « Ouverture du volet (%) » de l'onglet
@@ -201,6 +209,8 @@ struct FRParams
     winHt = 1.5,
     winSill = 0.9,
     balcD = 0.8,
+    balcVar = 0.0,
+    panOpaque = 100.0,
     seedVal = 1,
     variation = 30.0,
     widthVar = 10.0,
@@ -316,7 +326,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=5\n" to:ss
+    format "FRAMER_PARAMS=6\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -331,6 +341,8 @@ fn FR_ParamsToString PR =
     format "winHt=%\n" (FR_F PR.winHt) to:ss
     format "winSill=%\n" (FR_F PR.winSill) to:ss
     format "balcD=%\n" (FR_F PR.balcD) to:ss
+    format "balcVar=%\n" (FR_F PR.balcVar) to:ss
+    format "panOpaque=%\n" (FR_F PR.panOpaque) to:ss
     format "seedVal=%\n" PR.seedVal to:ss
     format "variation=%\n" (FR_F PR.variation) to:ss
     format "widthVar=%\n" (FR_F PR.widthVar) to:ss
@@ -406,6 +418,8 @@ fn FR_ParamsFromString txt =
                 "winHt": PR.winHt = v as float
                 "winSill": PR.winSill = v as float
                 "balcD": PR.balcD = v as float
+                "balcVar": PR.balcVar = v as float
+                "panOpaque": PR.panOpaque = v as float
                 "seedVal": PR.seedVal = v as integer
                 "variation": PR.variation = v as float
                 "widthVar": PR.widthVar = v as float
@@ -2023,6 +2037,12 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
                         capK = PR.capMode
                 )
 
+                -- profondeur de balcon / loggia, éventuellement variable au hasard
+                local bd = balcD
+
+                if PR.balcVar > 0.0 do
+                    bd = amax #(0.3, balcD * (1.0 + ((random -1.0 1.0) * PR.balcVar/100.0)))
+
                 if variant == "Wall" then
                 (
                     FR_WallRect (p+"_Wall") bu1 bu2 z1 z2 T basis wallMat
@@ -2030,7 +2050,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
                 else if kind == "In" then
                 (
                     -- loggia : le réglage d'étage s'applique à toutes les travées
-                    FR_Loggia p bu1 bu2 z1 z2 T depth balcD fw basis wallMat frameMat glassMat pierMat
+                    FR_Loggia p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat pierMat
                 )
                 else
                 (
@@ -2054,7 +2074,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
 
                     -- balcon saillant : réglage d'étage (kind) OU variante tirée au hasard
                     if kind == "Out" or variant == "Balcony" do
-                        FR_Balcony p bu1 bu2 z1 depth balcD basis pierMat frameMat glassMat
+                        FR_Balcony p bu1 bu2 z1 depth bd basis pierMat frameMat glassMat
                 )
             )
             else if fm == "Glazed panel" then
@@ -2063,7 +2083,12 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
             )
             else if fm == "Opaque panel" then
             (
-                FR_Panel p bu1 bu2 z1 z2 T fw basis frameMat panelMat
+                -- alternance aléatoire panneaux pleins / vitrés (% de pleins,
+                -- 100 % = tous pleins comme avant)
+                if PR.panOpaque >= 100.0 or (random 0.0 100.0) < PR.panOpaque then
+                    FR_Panel p bu1 bu2 z1 z2 T fw basis frameMat panelMat
+                else
+                    FR_Glass p bu1 bu2 z1 z2 T fw basis frameMat glassMat 1
             )
             else if fm == "Plain wall" then
             (
@@ -2072,7 +2097,15 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
         )
 
         -- balcon filant : une seule dalle sur toute la longueur de la façade
-        if kind == "Cont" do FR_Balcony (pf+"_Cont") (-endM) (width+endM) z1 depth balcD basis pierMat frameMat glassMat
+        if kind == "Cont" do
+        (
+            local bdC = balcD
+
+            if PR.balcVar > 0.0 do
+                bdC = amax #(0.3, balcD * (1.0 + ((random -1.0 1.0) * PR.balcVar/100.0)))
+
+            FR_Balcony (pf+"_Cont") (-endM) (width+endM) z1 depth bdC basis pierMat frameMat glassMat
+        )
     )
 
     /* ---------- bandeaux horizontaux ---------- */
@@ -2965,19 +2998,23 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     label l_spFloorSel "Étage n° :" pos:[25,254] width:185 height:16
     spinner spFloorSel "" pos:[215,252] width:190 range:[1,3,1] type:#integer tooltip:"Étage dont vous modifiez les réglages (mode indépendants)." enabled:false
     button btCopyAll "Appliquer cet étage à tous" pos:[25,278] width:380 height:22 tooltip:"Copie les réglages de l'étage affiché sur tous les autres étages." enabled:false
-    groupBox gb5 "Réglages de l'étage affiché" pos:[10,318] width:410 height:270
+    groupBox gb5 "Réglages de l'étage affiché" pos:[10,318] width:410 height:330
     label l_spUpper "Hauteur de l'étage :" pos:[25,344] width:185 height:16
     spinner spUpper "" pos:[215,342] width:190 range:[2,15,3] type:#float scale:0.1 tooltip:"Hauteur de l'étage affiché (de tous les étages en mode identiques)."
     dropdownList ddUpper "Type de l'étage :" pos:[25,370] width:380 items:#("Fenêtres","Panneaux vitrés","Panneaux pleins","Mur plein","Maison de ville (volets battants)") selection:1 tooltip:"Fenêtres dans un mur, panneaux vitrés, panneaux pleins, mur plein, ou maison de ville : fenêtres avec volets battants à deux vantaux (ouverture réglée par « Ouverture du volet »)."
-    label l_spWinW "Largeur fenêtre (% travée) :" pos:[25,422] width:185 height:16
-    spinner spWinW "" pos:[215,420] width:190 range:[20,100,70] type:#float scale:1 tooltip:"Largeur de la fenêtre en pourcentage de la largeur de la travée."
-    label l_spWinH "Hauteur fenêtre :" pos:[25,450] width:185 height:16
-    spinner spWinH "" pos:[215,448] width:190 range:[0.3,4,1.5] type:#float scale:0.05 tooltip:"Hauteur de la fenêtre."
-    label l_spSill "Hauteur d'allège :" pos:[25,478] width:185 height:16
-    spinner spSill "" pos:[215,476] width:190 range:[0,3,0.9] type:#float scale:0.05 tooltip:"Hauteur entre le sol de l'étage et le bas de la fenêtre."
-    dropdownList ddBalc "Balcons de l'étage :" pos:[25,504] width:380 items:#("Aucun","Saillants","Rentrants (loggias)","Filant (continu)") selection:2 tooltip:"Aucun, saillants, rentrants (loggias) ou filants (dalle continue). S'applique à TOUTES les travées de l'étage."
-    label l_spBalcD "Profondeur balcon / loggia :" pos:[25,558] width:185 height:16
-    spinner spBalcD "" pos:[215,556] width:190 range:[0.3,2.5,0.8] type:#float scale:0.05 tooltip:"Profondeur des balcons saillants et des loggias."
+    label l_spPanOp "Panneaux pleins (% des travées) :" pos:[25,422] width:185 height:16
+    spinner spPanOp "" pos:[215,420] width:190 range:[0,100,100] type:#float scale:1 tooltip:"Pour le type « Panneaux pleins » : part des travées à panneau plein, les autres reçoivent un panneau VITRÉ (tirage au hasard par travée). 100 % : tous pleins. 0 % : tous vitrés."
+    label l_spWinW "Largeur fenêtre (% travée) :" pos:[25,450] width:185 height:16
+    spinner spWinW "" pos:[215,448] width:190 range:[20,100,70] type:#float scale:1 tooltip:"Largeur de la fenêtre en pourcentage de la largeur de la travée."
+    label l_spWinH "Hauteur fenêtre :" pos:[25,478] width:185 height:16
+    spinner spWinH "" pos:[215,476] width:190 range:[0.3,4,1.5] type:#float scale:0.05 tooltip:"Hauteur de la fenêtre."
+    label l_spSill "Hauteur d'allège :" pos:[25,506] width:185 height:16
+    spinner spSill "" pos:[215,504] width:190 range:[0,3,0.9] type:#float scale:0.05 tooltip:"Hauteur entre le sol de l'étage et le bas de la fenêtre."
+    dropdownList ddBalc "Balcons de l'étage :" pos:[25,532] width:380 items:#("Aucun","Saillants","Rentrants (loggias)","Filant (continu)") selection:2 tooltip:"Aucun, saillants, rentrants (loggias) ou filants (dalle continue). S'applique à TOUTES les travées de l'étage."
+    label l_spBalcD "Profondeur balcon / loggia :" pos:[25,586] width:185 height:16
+    spinner spBalcD "" pos:[215,584] width:190 range:[0.3,2.5,0.8] type:#float scale:0.05 tooltip:"Profondeur des balcons saillants et des loggias."
+    label l_spBalcVar "Variation de profondeur (± %) :" pos:[25,614] width:185 height:16
+    spinner spBalcVar "" pos:[215,612] width:190 range:[0,80,0] type:#float scale:1 tooltip:"Variation ALÉATOIRE de la profondeur des balcons et loggias, en ± % autour de la profondeur réglée (0 = profondeur fixe). Tirage par travée."
 
     /* ----- onglet 3 : Rez-de-chaussée ----- */
 
@@ -3135,6 +3172,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         ddBalc.visible = t2
         l_spBalcD.visible = t2
         spBalcD.visible = t2
+        l_spPanOp.visible = t2
+        spPanOp.visible = t2
+        l_spBalcVar.visible = t2
+        spBalcVar.visible = t2
 
         gb7.visible = t3
         ddGround.visible = t3
@@ -3326,6 +3367,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         PR.depth = spDepth.value
         PR.fw = spFrame.value
         PR.balcD = spBalcD.value
+        PR.balcVar = spBalcVar.value
+        PR.panOpaque = spPanOp.value
 
         PR.upperH = spUpper.value
         PR.upperMode = FR_UpperCodes[ddUpper.selection]
@@ -3402,6 +3445,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         spDepth.value = PR.depth
         spFrame.value = PR.fw
         spBalcD.value = PR.balcD
+        spBalcVar.value = PR.balcVar
+        spPanOp.value = PR.panOpaque
 
         spSeed.value = PR.seedVal
         spVar.value = PR.variation
@@ -3574,6 +3619,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
             local vFlSill = copy FR_CSegs[FR_CurSeg].flSill
             local vFlBalc = copy FR_CSegs[FR_CurSeg].flBalc
             local vBalcD = FR_CSegs[FR_CurSeg].balcD
+            local vBalcV = FR_CSegs[FR_CurSeg].balcVar
+            local vPanOp = FR_CSegs[FR_CurSeg].panOpaque
             local vDepth = FR_CSegs[FR_CurSeg].depth
             local vFw = FR_CSegs[FR_CurSeg].fw
             local vCorn = FR_CSegs[FR_CurSeg].cornice
@@ -3609,6 +3656,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
                     FR_CSegs[k].flSill = copy vFlSill
                     FR_CSegs[k].flBalc = copy vFlBalc
                     FR_CSegs[k].balcD = vBalcD
+                    FR_CSegs[k].balcVar = vBalcV
+                    FR_CSegs[k].panOpaque = vPanOp
                     FR_CSegs[k].depth = vDepth
                     FR_CSegs[k].fw = vFw
                     FR_CSegs[k].cornice = vCorn
@@ -4150,6 +4199,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
                     PRk.flSill = copy PR1.flSill
                     PRk.flBalc = copy PR1.flBalc
                     PRk.balcD = PR1.balcD
+                    PRk.balcVar = PR1.balcVar
+                    PRk.panOpaque = PR1.panOpaque
                     PRk.depth = PR1.depth
                     PRk.fw = PR1.fw
                     PRk.cornice = PR1.cornice
@@ -4380,6 +4431,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     on spSill buttonup do FR_LiveTick()
     on spSill entered do FR_LiveTick()
     on spBalcD buttonup do FR_LiveTick()
+    on spBalcVar buttonup do FR_LiveTick()
+    on spBalcVar entered do FR_LiveTick()
+    on spPanOp buttonup do FR_LiveTick()
+    on spPanOp entered do FR_LiveTick()
     on spBalcD entered do FR_LiveTick()
     on spSeed buttonup do FR_LiveTick()
     on spSeed entered do FR_LiveTick()
