@@ -13,6 +13,10 @@ guides d'étages et moulures balayées).
 
 ## Version 0.6.4
 
+- **Placement corrigé** : la façade apparaissait au mauvais endroit en mode
+  « Sur une face sélectionnée » ou « Le long d'un contour fermé » dès que la
+  face ou la spline avait été déplacée/rotée après création (double
+  transformation de coordonnées).
 - **Volets battants à deux vantaux** : vrais volets pivotés — fermés devant la
   fenêtre (ouverture 0 %) ou ouverts à plat contre le mur (100 %), avec
   rotation réelle intermédiaire. L'angle suit le réglage « Ouverture du volet

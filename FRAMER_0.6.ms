@@ -3,6 +3,14 @@
     Générateur procédural de façades
     Autodesk 3ds Max 2026
 
+    CORRIGÉ EN 0.6.4 :
+    - PLACEMENT : la façade générée en mode « Sur une face sélectionnée » ou
+      « Le long d'un contour fermé » n'apparaissait pas à l'endroit de la face
+      ou du contour dès que celui-ci avait été déplacé/roté après création
+      (double transformation : polyop.getVert et getKnotPoint renvoient déjà
+      des coordonnées monde). Le profil de moulure est maintenant lu en
+      coordonnées locales, comme prévu.
+
     NOUVEAU EN 0.6.4 :
     - VOLETS BATTANTS À DEUX VANTAUX : vrais volets à pivoter, fermés devant la
       fenêtre (ouverture 0 %) ou ouverts à plat contre le mur (100 %), rotation
@@ -2169,7 +2177,8 @@ fn FR_ReadContour shapeNode =
         undefined
     else
     (
-        local pts = for k = 1 to (numKnots shapeNode 1) collect ((getKnotPoint shapeNode 1 k) * shapeNode.objectTransform)
+        -- getKnotPoint renvoie déjà des coordonnées MONDE : ne pas re-transformer
+        local pts = for k = 1 to (numKnots shapeNode 1) collect (in coordsys world (getKnotPoint shapeNode 1 k))
 
         -- supprime les sommets confondus (segments de moins de 0,5 m)
         local clean = #(pts[1])
@@ -2369,8 +2378,8 @@ fn FR_GetSelectedFace obj =
             )
             else
             (
-                -- espace objet -> espace monde
-                local pts = for id in ids collect ((polyop.getVert obj id) * obj.objectTransform)
+                -- polyop.getVert sur un node renvoie déjà des coordonnées MONDE : ne pas re-transformer
+                local pts = for id in ids collect (in coordsys world (polyop.getVert obj id))
 
                 local edgeX = normalize (pts[2]-pts[1])
                 local edgeZRaw = pts[4]-pts[1]
@@ -2507,7 +2516,7 @@ fn FR_ReadProfile node sc =
     (
         for k = 1 to (numKnots node 1) do
         (
-            local kp = getKnotPoint node 1 k
+            local kp = in coordsys local (getKnotPoint node 1 k)
 
             append pts [kp.x*sc, kp.y*sc]
         )
@@ -2536,7 +2545,8 @@ fn FR_ReadPath node =
 
     if (numSplines node) >= 1 do
     (
-        for k = 1 to (numKnots node 1) do append pts ((getKnotPoint node 1 k) * node.objectTransform)
+        -- getKnotPoint renvoie déjà des coordonnées MONDE : ne pas re-transformer
+        for k = 1 to (numKnots node 1) do append pts (in coordsys world (getKnotPoint node 1 k))
     )
 
     local cl = false
