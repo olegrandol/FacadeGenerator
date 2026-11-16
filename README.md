@@ -31,6 +31,9 @@ Copier dans `plugcfg\FRAMER\presets` puis Charger.
 - **Bow-window simple** (nouveau choix *Bow simple (rectangulaire)* du menu
   Balcons de l'étage) : oriel vitré en saillie parallélépipédique sans joues
   inclinées, poteaux d'angle droits, dalle et capot biseautés.
+- **Profondeur et variation par étage** : en mode *Indépendants*, la profondeur
+  des balcons/loggias et leur variation aléatoire (± %) se règlent étage par
+  étage (comme la hauteur et le type) ; en mode *Identiques*, un réglage commun.
 - **Épaisseur des dalles réglable** (onglet Étages, « Épaisseur des dalles (m) ») :
   la dalle de 30 cm (« grande casquette » de la 0.6.7) est conservée par défaut,
   0,15 m pour une dalle fine.

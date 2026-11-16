@@ -295,6 +295,8 @@ global FR_gWin = #(70.0)
 global FR_gHt = #(1.5)
 global FR_gSill = #(0.9)
 global FR_gBalc = #("Out")
+global FR_gBalcD = #(0.8)
+global FR_gBalcVar = #(0.0)
 
 -- mode contour : réglages de chaque segment + sommets du contour
 global FR_CSegs = #()
@@ -369,7 +371,12 @@ struct FRParams
     flWin = #(),
     flHt = #(),
     flSill = #(),
-    flBalc = #()
+    flBalc = #(),
+    -- profondeur et variation de profondeur des balcons/loggias, PAR ÉTAGE
+    -- (mode indépendants) ; les globales balcD/balcVar servent au mode identiques
+    -- et de défaut pour les façades plus anciennes
+    flBalcD = #(),
+    flBalcVar = #()
 )
 
 /* ---------------------------------------------------------------------
@@ -481,7 +488,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=10\n" to:ss
+    format "FRAMER_PARAMS=11\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -544,6 +551,8 @@ fn FR_ParamsToString PR =
     format "flHt=%\n" (FR_JoinF PR.flHt) to:ss
     format "flSill=%\n" (FR_JoinF PR.flSill) to:ss
     format "flBalc=%\n" (FR_JoinS PR.flBalc) to:ss
+    format "flBalcD=%\n" (FR_JoinF PR.flBalcD) to:ss
+    format "flBalcVar=%\n" (FR_JoinF PR.flBalcVar) to:ss
 
     ss as string
 )
@@ -558,6 +567,8 @@ fn FR_ParamsFromString txt =
     PR.flHt = #()
     PR.flSill = #()
     PR.flBalc = #()
+    PR.flBalcD = #()
+    PR.flBalcVar = #()
 
     local lines = filterString txt "\r\n"
 
@@ -634,6 +645,8 @@ fn FR_ParamsFromString txt =
                 "flHt": PR.flHt = for s in (filterString v ",") collect (s as float)
                 "flSill": PR.flSill = for s in (filterString v ",") collect (s as float)
                 "flBalc": PR.flBalc = for s in (filterString v ",") collect s
+                "flBalcD": PR.flBalcD = for s in (filterString v ",") collect (s as float)
+                "flBalcVar": PR.flBalcVar = for s in (filterString v ",") collect (s as float)
             )
         )
     )
@@ -2122,6 +2135,8 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
     PR.flHt = FR_FitArr PR.flHt floors PR.winHt
     PR.flSill = FR_FitArr PR.flSill floors PR.winSill
     PR.flBalc = FR_FitArr PR.flBalc floors "None"
+    PR.flBalcD = FR_FitArr PR.flBalcD floors PR.balcD
+    PR.flBalcVar = FR_FitArr PR.flBalcVar floors PR.balcVar
 
     local sumH = 0.0
 
@@ -2446,6 +2461,9 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
         local fWin = PR.flWin[f]
         local fHt = PR.flHt[f]
         local fSill = PR.flSill[f]
+        -- profondeur et variation de profondeur propres à cet étage (mode indépendants)
+        local fBalcD = PR.flBalcD[f]
+        local fBalcVar = PR.flBalcVar[f]
         local pf = "FRAMER_F"+(f as string)
 
         z1 = zs[f]
@@ -2491,11 +2509,11 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
                 -- baies cintrées : tirage par travée (0 % = toutes rectangulaires)
                 local awin = PR.arcPct >= 100.0 or (random 0.0 100.0) < PR.arcPct
 
-                -- profondeur de balcon / loggia, éventuellement variable au hasard
-                local bd = balcD
+                -- profondeur de balcon / loggia de CET étage, éventuellement variable au hasard
+                local bd = fBalcD
 
-                if PR.balcVar > 0.0 do
-                    bd = amax #(balcD*0.35, balcD * (1.0 + ((random -1.0 1.0) * PR.balcVar/100.0)))
+                if fBalcVar > 0.0 do
+                    bd = amax #(fBalcD*0.35, fBalcD * (1.0 + ((random -1.0 1.0) * fBalcVar/100.0)))
 
                 if kind == "Bow" or kind == "BowS" then
                 (
@@ -2565,10 +2583,10 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
         -- balcon filant : une seule dalle sur toute la longueur de la façade
         if kind == "Cont" do
         (
-            local bdC = balcD
+            local bdC = fBalcD
 
-            if PR.balcVar > 0.0 do
-                bdC = amax #(balcD*0.35, balcD * (1.0 + ((random -1.0 1.0) * PR.balcVar/100.0)))
+            if fBalcVar > 0.0 do
+                bdC = amax #(fBalcD*0.35, fBalcD * (1.0 + ((random -1.0 1.0) * fBalcVar/100.0)))
 
             FR_Balcony (pf+"_Cont") (-endM) (width+endM) z1 depth bdC basis pierMat frameMat glassMat railK:PR.railMode slTh:PR.slabTh
             append balcDepths bdC
@@ -3511,9 +3529,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
     spinner spSill "" pos:[215,504] width:190 range:[0,3,0.9] type:#float scale:0.05 tooltip:"Hauteur entre le sol de l'étage et le bas de la fenêtre."
     dropdownList ddBalc "Balcons de l'étage :" pos:[25,532] width:380 items:#("Aucun","Saillants","Rentrants (loggias)","Filant (continu)","Bow-windows","Bow simple (rectangulaire)") selection:2 tooltip:"Aucun, saillants, rentrants (loggias), filants (dalle continue), bow-windows (oriels vitrés en 3 facettes) ou bow simple (saillie rectangulaire sans joues inclinées). S'applique à TOUTES les travées de l'étage."
     label l_spBalcVar "Variation de profondeur (± %) :" pos:[25,576] width:185 height:16
-    spinner spBalcVar "" pos:[215,574] width:190 range:[0,80,0] type:#float scale:1 tooltip:"Variation ALÉATOIRE de la profondeur des balcons et loggias, en ± % autour de la profondeur réglée (0 = profondeur fixe). Tirage par travée."
+    spinner spBalcVar "" pos:[215,574] width:190 range:[0,80,0] type:#float scale:1 tooltip:"Variation ALÉATOIRE de la profondeur des balcons et loggias, en ± % autour de la profondeur réglée (0 = profondeur fixe). Tirage par travée. En mode indépendants, ce réglage est PROPRE À L'ÉTAGE affiché (étage n° ci-dessus)."
     label l_spBalcD "Profondeur balcon / loggia :" pos:[25,602] width:185 height:16
-    spinner spBalcD "" pos:[215,600] width:190 range:[0.3,2.5,0.8] type:#float scale:0.05 tooltip:"Profondeur des balcons saillants et des loggias."
+    spinner spBalcD "" pos:[215,600] width:190 range:[0.3,2.5,0.8] type:#float scale:0.05 tooltip:"Profondeur des balcons saillants et des loggias. En mode indépendants, ce réglage est PROPRE À L'ÉTAGE affiché (étage n° ci-dessus)."
     label l_spSlabTh "Épaisseur des dalles (m) :" pos:[25,628] width:185 height:16
     spinner spSlabTh "" pos:[215,626] width:190 range:[0.08,0.6,0.30] type:#float scale:0.01 tooltip:"Épaisseur des dalles de balcons. 0,30 : dalle épaisse qui se lit comme une casquette à chaque niveau (0.6.7). 0,15 : dalle fine."
 
@@ -3801,6 +3819,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
         FR_gHt = FR_FitArr FR_gHt n spWinH.value
         FR_gSill = FR_FitArr FR_gSill n spSill.value
         FR_gBalc = FR_FitArr FR_gBalc n (FR_BalcCodes[ddBalc.selection])
+        FR_gBalcD = FR_FitArr FR_gBalcD n spBalcD.value
+        FR_gBalcVar = FR_FitArr FR_gBalcVar n spBalcVar.value
     )
 
     -- contrôles -> étage idx
@@ -3816,6 +3836,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
             FR_gHt[idx] = spWinH.value
             FR_gSill[idx] = spSill.value
             FR_gBalc[idx] = FR_BalcCodes[ddBalc.selection]
+            FR_gBalcD[idx] = spBalcD.value
+            FR_gBalcVar[idx] = spBalcVar.value
         )
     )
 
@@ -3845,6 +3867,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
             local bi = findItem FR_BalcCodes FR_gBalc[idx]
             if bi == 0 do bi = 1
             ddBalc.selection = bi
+
+            spBalcD.value = FR_gBalcD[idx]
+            spBalcVar.value = FR_gBalcVar[idx]
         )
     )
 
@@ -3973,6 +3998,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
             PR.flHt = for k = 1 to nF collect spWinH.value
             PR.flSill = for k = 1 to nF collect spSill.value
             PR.flBalc = for k = 1 to nF collect (FR_BalcCodes[ddBalc.selection])
+            PR.flBalcD = for k = 1 to nF collect spBalcD.value
+            PR.flBalcVar = for k = 1 to nF collect spBalcVar.value
         )
         else
         (
@@ -3984,6 +4011,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
             PR.flHt = (FR_CopyArr FR_gHt)
             PR.flSill = (FR_CopyArr FR_gSill)
             PR.flBalc = (FR_CopyArr FR_gBalc)
+            PR.flBalcD = (FR_CopyArr FR_gBalcD)
+            PR.flBalcVar = (FR_CopyArr FR_gBalcVar)
         )
 
         PR
@@ -4091,6 +4120,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
         FR_gHt = (FR_CopyArr PR.flHt)
         FR_gSill = (FR_CopyArr PR.flSill)
         FR_gBalc = (FR_CopyArr PR.flBalc)
+        FR_gBalcD = (FR_CopyArr PR.flBalcD)
+        FR_gBalcVar = (FR_CopyArr PR.flBalcVar)
 
         FitFloorArrays()
 
@@ -4099,7 +4130,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
 
         for k = 2 to FR_gH.count do
         (
-            if FR_gH[k] != FR_gH[1] or FR_gMode[k] != FR_gMode[1] or FR_gWin[k] != FR_gWin[1] or FR_gHt[k] != FR_gHt[1] or FR_gSill[k] != FR_gSill[1] or FR_gBalc[k] != FR_gBalc[1] do same = false
+            if FR_gH[k] != FR_gH[1] or FR_gMode[k] != FR_gMode[1] or FR_gWin[k] != FR_gWin[1] or FR_gHt[k] != FR_gHt[1] or FR_gSill[k] != FR_gSill[1] or FR_gBalc[k] != FR_gBalc[1] or FR_gBalcD[k] != FR_gBalcD[1] or FR_gBalcVar[k] != FR_gBalcVar[1] do same = false
         )
 
         -- IMPORTANT : ddBalc AVANT la bascule rbFloors — sinon StoreFloor (déclenché par
@@ -4206,6 +4237,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
             local vFlHt = (FR_CopyArr FR_CSegs[FR_CurSeg].flHt)
             local vFlSill = (FR_CopyArr FR_CSegs[FR_CurSeg].flSill)
             local vFlBalc = (FR_CopyArr FR_CSegs[FR_CurSeg].flBalc)
+            local vFlBalcD = (FR_CopyArr FR_CSegs[FR_CurSeg].flBalcD)
+            local vFlBalcVar = (FR_CopyArr FR_CSegs[FR_CurSeg].flBalcVar)
             local vBalcD = FR_CSegs[FR_CurSeg].balcD
             local vBalcV = FR_CSegs[FR_CurSeg].balcVar
             local vPanOp = FR_CSegs[FR_CurSeg].panOpaque
@@ -4255,6 +4288,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
                     FR_CSegs[k].flHt = (FR_CopyArr vFlHt)
                     FR_CSegs[k].flSill = (FR_CopyArr vFlSill)
                     FR_CSegs[k].flBalc = (FR_CopyArr vFlBalc)
+                    FR_CSegs[k].flBalcD = (FR_CopyArr vFlBalcD)
+                    FR_CSegs[k].flBalcVar = (FR_CopyArr vFlBalcVar)
                     FR_CSegs[k].balcD = vBalcD
                     FR_CSegs[k].balcVar = vBalcV
                     FR_CSegs[k].panOpaque = vPanOp
@@ -4489,6 +4524,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
             FR_gHt = (FR_CopyArr pp.flHt)
             FR_gSill = (FR_CopyArr pp.flSill)
             FR_gBalc = (FR_CopyArr pp.flBalc)
+            FR_gBalcD = (FR_CopyArr pp.flBalcD)
+            FR_gBalcVar = (FR_CopyArr pp.flBalcVar)
             LoadFloor 1
             flCustom = true
 
@@ -4843,6 +4880,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
                     PRk.flHt = (FR_CopyArr PR1.flHt)
                     PRk.flSill = (FR_CopyArr PR1.flSill)
                     PRk.flBalc = (FR_CopyArr PR1.flBalc)
+                    PRk.flBalcD = (FR_CopyArr PR1.flBalcD)
+                    PRk.flBalcVar = (FR_CopyArr PR1.flBalcVar)
                     PRk.balcD = PR1.balcD
                     PRk.balcVar = PR1.balcVar
                     PRk.panOpaque = PR1.panOpaque
