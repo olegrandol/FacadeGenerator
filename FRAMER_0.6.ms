@@ -13,9 +13,24 @@
       droits, dalle et capot biseautés.
 
     CORRIGÉ EN 0.6.9 :
-    - LA DALLE ÉPAISSE DE 30 CM EST SUPPRIMÉE : retour à une dalle de balcon de
-      15 cm (le relief « grande casquette » de 0.6.7 est retiré à la demande ;
-      les casquettes réglables de l'onglet Fenêtres restent disponibles).
+    - CRASH « L'appel nécessite une fonction ou une classe : undefined » dès
+      qu'on coche la moulure d'assemblage : en MAXScript, une fonction
+      référencée avant sa définition dans le fichier devient une locale
+      implicite indéfinie (FR_Surround appelait FR_SweepMesh défini plus de
+      2000 lignes plus bas). Déclarations globales anticipées pour toutes
+      les fonctions concernées (FR_SweepMesh, FR_ReadProfile, FR_ArchWall,
+      FR_ArchGlazing, FR_Pt, FR_Prisma) : la moulure, les fenêtres cintrées
+      et les dalles/casquettes biseautées fonctionnent à nouveau.
+    - ÉPAISSEUR DES DALLES RÉGLABLE (au lieu de supprimée) : la dalle de
+      balcon de 30 cm (« grande casquette » de 0.6.7) est conservée par
+      défaut ; nouveau réglage « Épaisseur des dalles (m) » de l'onglet
+      Étages (0,08 à 0,60 ; 0,15 pour une dalle fine).
+    - VARIATION DE PROFONDEUR des balcons/loggias à nouveau visible : le
+      plancher minimal était un 0,3 m FIXE qui écrasait le tirage aléatoire
+      sur les faibles profondeurs (ex. 0,4 m ± 50 % était presque tout
+      clampé) ; il est désormais RELATIF (35 % de la profondeur réglée).
+      Le tirage réel s'affiche dans la ligne de résumé (« prof. dalles :
+      X à Y m ») pour vérifier d'un coup d'œil que la variation joue.
 
     CORRIGÉ EN 0.6.8 :
     - TROU NOIR DANS LA DALLE DE TERRASSE (toit en mode contour, plans non
@@ -303,6 +318,7 @@ struct FRParams
     winSill = 0.9,
     balcD = 0.8,
     balcVar = 0.0,
+    slabTh = 0.30,
     panOpaque = 100.0,
     seedVal = 1,
     variation = 30.0,
@@ -355,6 +371,17 @@ struct FRParams
     flSill = #(),
     flBalc = #()
 )
+
+/* ---------------------------------------------------------------------
+   DÉCLARATIONS ANTICIPÉES (forward declarations).
+   En MAXScript, une fonction référencée AVANT sa définition dans le
+   fichier devient une « locale implicite » valant undefined au moment
+   de l'appel (ex. FR_Surround -> FR_SweepMesh plantait dès que la
+   moulure d'assemblage était cochée). On déclare donc ces noms comme
+   globals ici ; les définitions `fn ...` plus bas réaffectent bien
+   ces globals.
+--------------------------------------------------------------------- */
+global FR_Pt, FR_Prisma, FR_SweepMesh, FR_ArchWall, FR_ArchGlazing, FR_ReadProfile
 
 fn FR_Msg txt =
 (
@@ -454,7 +481,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=9\n" to:ss
+    format "FRAMER_PARAMS=10\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -470,6 +497,7 @@ fn FR_ParamsToString PR =
     format "winSill=%\n" (FR_F PR.winSill) to:ss
     format "balcD=%\n" (FR_F PR.balcD) to:ss
     format "balcVar=%\n" (FR_F PR.balcVar) to:ss
+    format "slabTh=%\n" (FR_F PR.slabTh) to:ss
     format "panOpaque=%\n" (FR_F PR.panOpaque) to:ss
     format "seedVal=%\n" PR.seedVal to:ss
     format "variation=%\n" (FR_F PR.variation) to:ss
@@ -559,6 +587,7 @@ fn FR_ParamsFromString txt =
                 "winSill": PR.winSill = v as float
                 "balcD": PR.balcD = v as float
                 "balcVar": PR.balcVar = v as float
+                "slabTh": PR.slabTh = v as float
                 "panOpaque": PR.panOpaque = v as float
                 "seedVal": PR.seedVal = v as integer
                 "variation": PR.variation = v as float
@@ -1010,7 +1039,7 @@ fn FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat winW winH 
    proj = saillie au-delà des piliers
 ========================================================= */
 
-fn FR_Balcony p bu1 bu2 z depth proj basis slabMat railMat glassMat railK:"Glass" =
+fn FR_Balcony p bu1 bu2 z depth proj basis slabMat railMat glassMat railK:"Glass" slTh:0.30 =
 (
     local outer = -depth - proj
     local inner = -depth*0.5
@@ -1019,9 +1048,10 @@ fn FR_Balcony p bu1 bu2 z depth proj basis slabMat railMat glassMat railK:"Glass
     local uc = (bu1+bu2)/2
     local bw = bu2-bu1
 
-    -- dalle 15 cm à arête avant biseautée (0.6.9 : la dalle épaisse de 30 cm
-    -- est supprimée, le relief vient du chanfrein et des casquettes)
-    FR_ChamferSlab (p+"_Slab") bu1 bu2 outer inner (z-0.075) 0.15 basis slabMat 0.03
+    -- dalle à arête avant biseautée, épaisseur réglable (0.6.9 : 30 cm par
+    -- défaut comme en 0.6.7, 15 cm pour une dalle fine — réglage « Épaisseur
+    -- des dalles » de l'onglet Étages)
+    FR_ChamferSlab (p+"_Slab") bu1 bu2 outer inner (z - slTh/2) slTh basis slabMat 0.03
 
     -- garde-corps du balcon : suit le type choisi pour les garde-corps de fenêtres
     -- (« Aucun » garde le vitré par sécurité ; « Lisse » : seulement la main courante)
@@ -2083,6 +2113,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
     local depth = PR.depth
     local fw = PR.fw
     local balcD = PR.balcD
+    local balcDepths = #()   -- profondeurs réellement tirées (pour le résumé)
 
     -- complète les tableaux par étage (façades créées avec une version plus ancienne)
     PR.flH = FR_FitArr PR.flH floors PR.upperH
@@ -2464,13 +2495,14 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
                 local bd = balcD
 
                 if PR.balcVar > 0.0 do
-                    bd = amax #(0.3, balcD * (1.0 + ((random -1.0 1.0) * PR.balcVar/100.0)))
+                    bd = amax #(balcD*0.35, balcD * (1.0 + ((random -1.0 1.0) * PR.balcVar/100.0)))
 
                 if kind == "Bow" or kind == "BowS" then
                 (
                     -- bow-window : oriel vitré sur toute la travée
                     -- (3 facettes à joues 45°, ou simple rectangulaire sans biseaux)
                     FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat simple:(kind == "BowS")
+                    append balcDepths bd
                 )
                 else if variant == "Wall" then
                 (
@@ -2480,6 +2512,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
                 (
                     -- loggia : le réglage d'étage s'applique à toutes les travées
                     FR_Loggia p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat pierMat
+                    append balcDepths bd
                 )
                 else
                 (
@@ -2504,7 +2537,10 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
 
                     -- balcon saillant : réglage d'étage (kind) OU variante tirée au hasard
                     if kind == "Out" or variant == "Balcony" do
-                        FR_Balcony p bu1 bu2 z1 depth bd basis pierMat frameMat glassMat railK:PR.railMode
+                    (
+                        FR_Balcony p bu1 bu2 z1 depth bd basis pierMat frameMat glassMat railK:PR.railMode slTh:PR.slabTh
+                        append balcDepths bd
+                    )
                 )
             )
             else if fm == "Glazed panel" then
@@ -2532,11 +2568,16 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
             local bdC = balcD
 
             if PR.balcVar > 0.0 do
-                bdC = amax #(0.3, balcD * (1.0 + ((random -1.0 1.0) * PR.balcVar/100.0)))
+                bdC = amax #(balcD*0.35, balcD * (1.0 + ((random -1.0 1.0) * PR.balcVar/100.0)))
 
-            FR_Balcony (pf+"_Cont") (-endM) (width+endM) z1 depth bdC basis pierMat frameMat glassMat railK:PR.railMode
+            FR_Balcony (pf+"_Cont") (-endM) (width+endM) z1 depth bdC basis pierMat frameMat glassMat railK:PR.railMode slTh:PR.slabTh
+            append balcDepths bdC
         )
     )
+
+    -- 0.6.9 : affiche le tirage réel des profondeurs de dalles (diagnostic variation)
+    if balcDepths.count > 0 do
+        FR_Summary = FR_Summary + " | prof. dalles : " + ((amin balcDepths) as string) + " à " + ((amax balcDepths) as string) + " m"
 
     /* ---------- bandeaux horizontaux ---------- */
 
@@ -3456,7 +3497,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
     label l_spFloorSel "Étage n° :" pos:[25,254] width:185 height:16
     spinner spFloorSel "" pos:[215,252] width:190 range:[1,3,1] type:#integer tooltip:"Étage dont vous modifiez les réglages (mode indépendants)." enabled:false
     button btCopyAll "Appliquer cet étage à tous" pos:[25,278] width:380 height:22 tooltip:"Copie les réglages de l'étage affiché sur tous les autres étages." enabled:false
-    groupBox gb5 "Réglages de l'étage affiché" pos:[10,318] width:410 height:316
+    groupBox gb5 "Réglages de l'étage affiché" pos:[10,318] width:410 height:344
     label l_spUpper "Hauteur de l'étage :" pos:[25,344] width:185 height:16
     spinner spUpper "" pos:[215,342] width:190 range:[2,15,3] type:#float scale:0.1 tooltip:"Hauteur de l'étage affiché (de tous les étages en mode identiques)."
     dropdownList ddUpper "Type de l'étage :" pos:[25,370] width:380 items:#("Fenêtres","Panneaux vitrés","Panneaux pleins","Mur plein","Maison de ville (volets battants)") selection:1 tooltip:"Fenêtres dans un mur, panneaux vitrés, panneaux pleins, mur plein, ou maison de ville : fenêtres avec volets battants à deux vantaux (ouverture réglée par « Ouverture du volet »)."
@@ -3473,6 +3514,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
     spinner spBalcVar "" pos:[215,574] width:190 range:[0,80,0] type:#float scale:1 tooltip:"Variation ALÉATOIRE de la profondeur des balcons et loggias, en ± % autour de la profondeur réglée (0 = profondeur fixe). Tirage par travée."
     label l_spBalcD "Profondeur balcon / loggia :" pos:[25,602] width:185 height:16
     spinner spBalcD "" pos:[215,600] width:190 range:[0.3,2.5,0.8] type:#float scale:0.05 tooltip:"Profondeur des balcons saillants et des loggias."
+    label l_spSlabTh "Épaisseur des dalles (m) :" pos:[25,628] width:185 height:16
+    spinner spSlabTh "" pos:[215,626] width:190 range:[0.08,0.6,0.30] type:#float scale:0.01 tooltip:"Épaisseur des dalles de balcons. 0,30 : dalle épaisse qui se lit comme une casquette à chaque niveau (0.6.7). 0,15 : dalle fine."
 
     /* ----- onglet 3 : Rez-de-chaussée ----- */
 
@@ -3662,6 +3705,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
         spPanOp.visible = t2
         l_spBalcVar.visible = t2
         spBalcVar.visible = t2
+        l_spSlabTh.visible = t2
+        spSlabTh.visible = t2
 
         gb7.visible = t3
         ddGround.visible = t3
@@ -3862,6 +3907,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
         PR.fw = spFrame.value
         PR.balcD = spBalcD.value
         PR.balcVar = spBalcVar.value
+        PR.slabTh = spSlabTh.value
         PR.panOpaque = spPanOp.value
 
         PR.upperH = spUpper.value
@@ -3954,6 +4000,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
         spFrame.value = PR.fw
         spBalcD.value = PR.balcD
         spBalcVar.value = PR.balcVar
+        spSlabTh.value = PR.slabTh
         spPanOp.value = PR.panOpaque
 
         spSeed.value = PR.seedVal
@@ -5043,6 +5090,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
     on spBalcD buttonup do FR_LiveTick()
     on spBalcVar buttonup do FR_LiveTick()
     on spBalcVar entered do FR_LiveTick()
+    on spSlabTh buttonup do FR_LiveTick()
+    on spSlabTh entered do FR_LiveTick()
     on spPanOp buttonup do FR_LiveTick()
     on spPanOp entered do FR_LiveTick()
     on spBalcD entered do FR_LiveTick()

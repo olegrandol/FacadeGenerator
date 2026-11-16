@@ -31,9 +31,18 @@ Copier dans `plugcfg\FRAMER\presets` puis Charger.
 - **Bow-window simple** (nouveau choix *Bow simple (rectangulaire)* du menu
   Balcons de l'étage) : oriel vitré en saillie parallélépipédique sans joues
   inclinées, poteaux d'angle droits, dalle et capot biseautés.
-- **Dalle de balcon ramenée à 15 cm** : la dalle épaisse de 30 cm (« grande
-  casquette ») de la 0.6.7 est supprimée ; les casquettes réglables de l'onglet
-  Fenêtres restent disponibles.
+- **Épaisseur des dalles réglable** (onglet Étages, « Épaisseur des dalles (m) ») :
+  la dalle de 30 cm (« grande casquette » de la 0.6.7) est conservée par défaut,
+  0,15 m pour une dalle fine.
+- **Variation de profondeur des balcons/loggias corrigée** : le plancher minimal
+  était un 0,3 m fixe qui écrasait le tirage aléatoire sur les faibles profondeurs ;
+  il est désormais relatif (35 % de la profondeur réglée) et le tirage réel
+  s'affiche dans la ligne de résumé (« prof. dalles : X à Y m »).
+- **Corrigé : crash « L'appel nécessite une fonction ou une classe : undefined »**
+  dès qu'on activait la moulure d'assemblage (fonction référencée avant sa
+  définition dans le fichier = locale implicite indéfinie en MAXScript).
+  Déclarations globales anticipées : moulure, fenêtres cintrées et
+  dalles/casquettes biseautées fonctionnent.
 
 ## Version 0.6.8
 

@@ -1,4 +1,4 @@
-FRAMER_PARAMS=9
+FRAMER_PARAMS=10
 width=20.0000
 groundH=3.8000
 upperH=3.0000
@@ -14,6 +14,7 @@ winHt=2.3000
 winSill=0.0500
 balcD=1.2000
 balcVar=0.0000
+slabTh=0.1500
 panOpaque=100.0000
 seedVal=1
 variation=0.0000
