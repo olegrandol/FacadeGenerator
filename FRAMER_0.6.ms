@@ -298,6 +298,15 @@ fn FR_FitArr arr n dflt =
     arr
 )
 
+-- copie de tableau : `copy <array>` ne renvoie PAS une copie (il renvoie OK !),
+-- ce qui détruisait silencieusement les tableaux par étage (balcon du 1er étage
+-- du preset, réglages par segment du contour...). On copie élément par élément.
+fn FR_CopyArr a =
+(
+    if classof a != Array then #()
+    else for i in a collect i
+)
+
 /* =========================================================
    PARAMÈTRES <-> TEXTE (mémorisés dans le helper racine)
 ========================================================= */
@@ -3448,12 +3457,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
         (
             StoreFloor curFloor
 
-            PR.flH = copy FR_gH
-            PR.flMode = copy FR_gMode
-            PR.flWin = copy FR_gWin
-            PR.flHt = copy FR_gHt
-            PR.flSill = copy FR_gSill
-            PR.flBalc = copy FR_gBalc
+            PR.flH = (FR_CopyArr FR_gH)
+            PR.flMode = (FR_CopyArr FR_gMode)
+            PR.flWin = (FR_CopyArr FR_gWin)
+            PR.flHt = (FR_CopyArr FR_gHt)
+            PR.flSill = (FR_CopyArr FR_gSill)
+            PR.flBalc = (FR_CopyArr FR_gBalc)
         )
 
         PR
@@ -3531,12 +3540,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
         if ui == 0 do ui = 1
         ddUpper.selection = ui
 
-        FR_gH = copy PR.flH
-        FR_gMode = copy PR.flMode
-        FR_gWin = copy PR.flWin
-        FR_gHt = copy PR.flHt
-        FR_gSill = copy PR.flSill
-        FR_gBalc = copy PR.flBalc
+        FR_gH = (FR_CopyArr PR.flH)
+        FR_gMode = (FR_CopyArr PR.flMode)
+        FR_gWin = (FR_CopyArr PR.flWin)
+        FR_gHt = (FR_CopyArr PR.flHt)
+        FR_gSill = (FR_CopyArr PR.flSill)
+        FR_gBalc = (FR_CopyArr PR.flBalc)
 
         FitFloorArrays()
 
@@ -3646,12 +3655,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
             -- verticale + commun : copiés du segment affiché vers tous les autres
             local vGH = FR_CSegs[FR_CurSeg].groundH
             local vFl = FR_CSegs[FR_CurSeg].floors
-            local vFlH = copy FR_CSegs[FR_CurSeg].flH
-            local vFlMode = copy FR_CSegs[FR_CurSeg].flMode
-            local vFlWin = copy FR_CSegs[FR_CurSeg].flWin
-            local vFlHt = copy FR_CSegs[FR_CurSeg].flHt
-            local vFlSill = copy FR_CSegs[FR_CurSeg].flSill
-            local vFlBalc = copy FR_CSegs[FR_CurSeg].flBalc
+            local vFlH = (FR_CopyArr FR_CSegs[FR_CurSeg].flH)
+            local vFlMode = (FR_CopyArr FR_CSegs[FR_CurSeg].flMode)
+            local vFlWin = (FR_CopyArr FR_CSegs[FR_CurSeg].flWin)
+            local vFlHt = (FR_CopyArr FR_CSegs[FR_CurSeg].flHt)
+            local vFlSill = (FR_CopyArr FR_CSegs[FR_CurSeg].flSill)
+            local vFlBalc = (FR_CopyArr FR_CSegs[FR_CurSeg].flBalc)
             local vBalcD = FR_CSegs[FR_CurSeg].balcD
             local vBalcV = FR_CSegs[FR_CurSeg].balcVar
             local vPanOp = FR_CSegs[FR_CurSeg].panOpaque
@@ -3683,12 +3692,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
                 (
                     FR_CSegs[k].groundH = vGH
                     FR_CSegs[k].floors = vFl
-                    FR_CSegs[k].flH = copy vFlH
-                    FR_CSegs[k].flMode = copy vFlMode
-                    FR_CSegs[k].flWin = copy vFlWin
-                    FR_CSegs[k].flHt = copy vFlHt
-                    FR_CSegs[k].flSill = copy vFlSill
-                    FR_CSegs[k].flBalc = copy vFlBalc
+                    FR_CSegs[k].flH = (FR_CopyArr vFlH)
+                    FR_CSegs[k].flMode = (FR_CopyArr vFlMode)
+                    FR_CSegs[k].flWin = (FR_CopyArr vFlWin)
+                    FR_CSegs[k].flHt = (FR_CopyArr vFlHt)
+                    FR_CSegs[k].flSill = (FR_CopyArr vFlSill)
+                    FR_CSegs[k].flBalc = (FR_CopyArr vFlBalc)
                     FR_CSegs[k].balcD = vBalcD
                     FR_CSegs[k].balcVar = vBalcV
                     FR_CSegs[k].panOpaque = vPanOp
@@ -3905,12 +3914,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
             -- ceinture et bretelles : ré-applique les tableaux par étage, au cas où un
             -- handler déclenché par FR_WriteUI (rbFloors, spFloorSel, ddBalc...) aurait
             -- réécrit FR_gBalc/FR_gH/... avec les valeurs affichées
-            FR_gH = copy pp.flH
-            FR_gMode = copy pp.flMode
-            FR_gWin = copy pp.flWin
-            FR_gHt = copy pp.flHt
-            FR_gSill = copy pp.flSill
-            FR_gBalc = copy pp.flBalc
+            FR_gH = (FR_CopyArr pp.flH)
+            FR_gMode = (FR_CopyArr pp.flMode)
+            FR_gWin = (FR_CopyArr pp.flWin)
+            FR_gHt = (FR_CopyArr pp.flHt)
+            FR_gSill = (FR_CopyArr pp.flSill)
+            FR_gBalc = (FR_CopyArr pp.flBalc)
             LoadFloor 1
             flCustom = true
 
@@ -4259,12 +4268,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
                     -- verticale et communs : identiques au premier segment
                     PRk.groundH = PR1.groundH
                     PRk.floors = PR1.floors
-                    PRk.flH = copy PR1.flH
-                    PRk.flMode = copy PR1.flMode
-                    PRk.flWin = copy PR1.flWin
-                    PRk.flHt = copy PR1.flHt
-                    PRk.flSill = copy PR1.flSill
-                    PRk.flBalc = copy PR1.flBalc
+                    PRk.flH = (FR_CopyArr PR1.flH)
+                    PRk.flMode = (FR_CopyArr PR1.flMode)
+                    PRk.flWin = (FR_CopyArr PR1.flWin)
+                    PRk.flHt = (FR_CopyArr PR1.flHt)
+                    PRk.flSill = (FR_CopyArr PR1.flSill)
+                    PRk.flBalc = (FR_CopyArr PR1.flBalc)
                     PRk.balcD = PR1.balcD
                     PRk.balcVar = PR1.balcVar
                     PRk.panOpaque = PR1.panOpaque
