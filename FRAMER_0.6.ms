@@ -2998,7 +2998,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     label l_spFloorSel "Étage n° :" pos:[25,254] width:185 height:16
     spinner spFloorSel "" pos:[215,252] width:190 range:[1,3,1] type:#integer tooltip:"Étage dont vous modifiez les réglages (mode indépendants)." enabled:false
     button btCopyAll "Appliquer cet étage à tous" pos:[25,278] width:380 height:22 tooltip:"Copie les réglages de l'étage affiché sur tous les autres étages." enabled:false
-    groupBox gb5 "Réglages de l'étage affiché" pos:[10,318] width:410 height:330
+    groupBox gb5 "Réglages de l'étage affiché" pos:[10,318] width:410 height:316
     label l_spUpper "Hauteur de l'étage :" pos:[25,344] width:185 height:16
     spinner spUpper "" pos:[215,342] width:190 range:[2,15,3] type:#float scale:0.1 tooltip:"Hauteur de l'étage affiché (de tous les étages en mode identiques)."
     dropdownList ddUpper "Type de l'étage :" pos:[25,370] width:380 items:#("Fenêtres","Panneaux vitrés","Panneaux pleins","Mur plein","Maison de ville (volets battants)") selection:1 tooltip:"Fenêtres dans un mur, panneaux vitrés, panneaux pleins, mur plein, ou maison de ville : fenêtres avec volets battants à deux vantaux (ouverture réglée par « Ouverture du volet »)."
@@ -3011,10 +3011,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     label l_spSill "Hauteur d'allège :" pos:[25,506] width:185 height:16
     spinner spSill "" pos:[215,504] width:190 range:[0,3,0.9] type:#float scale:0.05 tooltip:"Hauteur entre le sol de l'étage et le bas de la fenêtre."
     dropdownList ddBalc "Balcons de l'étage :" pos:[25,532] width:380 items:#("Aucun","Saillants","Rentrants (loggias)","Filant (continu)") selection:2 tooltip:"Aucun, saillants, rentrants (loggias) ou filants (dalle continue). S'applique à TOUTES les travées de l'étage."
-    label l_spBalcD "Profondeur balcon / loggia :" pos:[25,586] width:185 height:16
-    spinner spBalcD "" pos:[215,584] width:190 range:[0.3,2.5,0.8] type:#float scale:0.05 tooltip:"Profondeur des balcons saillants et des loggias."
-    label l_spBalcVar "Variation de profondeur (± %) :" pos:[25,614] width:185 height:16
-    spinner spBalcVar "" pos:[215,612] width:190 range:[0,80,0] type:#float scale:1 tooltip:"Variation ALÉATOIRE de la profondeur des balcons et loggias, en ± % autour de la profondeur réglée (0 = profondeur fixe). Tirage par travée."
+    label l_spBalcVar "Variation de profondeur (± %) :" pos:[25,576] width:185 height:16
+    spinner spBalcVar "" pos:[215,574] width:190 range:[0,80,0] type:#float scale:1 tooltip:"Variation ALÉATOIRE de la profondeur des balcons et loggias, en ± % autour de la profondeur réglée (0 = profondeur fixe). Tirage par travée."
+    label l_spBalcD "Profondeur balcon / loggia :" pos:[25,602] width:185 height:16
+    spinner spBalcD "" pos:[215,600] width:190 range:[0.3,2.5,0.8] type:#float scale:0.05 tooltip:"Profondeur des balcons saillants et des loggias."
 
     /* ----- onglet 3 : Rez-de-chaussée ----- */
 
