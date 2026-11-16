@@ -21,6 +21,9 @@ guides d'étages et moulures balayées).
 - `presets/Facade_photo4.framer` — immeuble commercial d'après photo (4 travées,
   rdc vitrines, 4 étages de porte-fenêtres, balcons individuels à garde-corps vitré,
   casquettes, toit-terrasse avec acrotère).
+- `presets/Facade_photo5.framer` — résidence blanche d'après modèle 3D (6 travées,
+  6 étages, balcons individuels pleine travée à garde-corps vitré 1,20 m, fenêtres
+  avec allège haute, menuiseries gris foncé, toit-terrasse).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
