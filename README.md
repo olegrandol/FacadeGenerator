@@ -24,6 +24,17 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.9
+
+- **Arêtes biseautées** sur les casquettes et les dalles (balcons, bow-windows) :
+  chanfrein sous l'arête côté rue au lieu de la dalle rectangulaire brute.
+- **Bow-window simple** (nouveau choix *Bow simple (rectangulaire)* du menu
+  Balcons de l'étage) : oriel vitré en saillie parallélépipédique sans joues
+  inclinées, poteaux d'angle droits, dalle et capot biseautés.
+- **Dalle de balcon ramenée à 15 cm** : la dalle épaisse de 30 cm (« grande
+  casquette ») de la 0.6.7 est supprimée ; les casquettes réglables de l'onglet
+  Fenêtres restent disponibles.
+
 ## Version 0.6.8
 
 - **Trou noir dans la dalle de terrasse** (toit en mode contour, plans non convexes) :

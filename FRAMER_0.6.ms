@@ -1,7 +1,21 @@
 /*
-    FRAMER 0.6.8
+    FRAMER 0.6.9
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.9 :
+    - ARÊTES BISEAUTÉES sur les casquettes et les dalles (balcons, bow-windows) :
+      chanfrein sous l'arête côté rue (profil trapézoïdal balayé) au lieu de la
+      dalle rectangulaire brute — ombre plus douce, lecture plus fine.
+    - BOW-WINDOW SIMPLE (nouveau choix « Bow simple (rectangulaire) » du menu
+      Balcons de l'étage) : oriel vitré en saillie parallélépipédique SANS joues
+      inclinées — une seule face avant vitrée pleine largeur, poteaux d'angle
+      droits, dalle et capot biseautés.
+
+    CORRIGÉ EN 0.6.9 :
+    - LA DALLE ÉPAISSE DE 30 CM EST SUPPRIMÉE : retour à une dalle de balcon de
+      15 cm (le relief « grande casquette » de 0.6.7 est retiré à la demande ;
+      les casquettes réglables de l'onglet Fenêtres restent disponibles).
 
     CORRIGÉ EN 0.6.8 :
     - TROU NOIR DANS LA DALLE DE TERRASSE (toit en mode contour, plans non
@@ -253,7 +267,7 @@ global FR_GroundCodes = #("Storefront","Door + sidelight","Alternating storefron
 global FR_ArcCodes = #("Round","Segment","Flat")
 global FR_LastRoot = undefined   -- façade actuellement en édition
 global FR_UpperCodes = #("Window","Glazed panel","Opaque panel","Plain wall","TownWin")
-global FR_BalcCodes = #("None","Out","In","Cont","Bow")
+global FR_BalcCodes = #("None","Out","In","Cont","Bow","BowS")
 global FR_EntCodes = #("None","Center","Left","Right","Random")
 global FR_RailCodes = #("None","Glass","Bars","Solid","Lisse")
 global FR_CapCodes = #("None","Slab","Lam")
@@ -685,6 +699,30 @@ fn FR_LocalBox n u v w sx sy sz basis mat =
     FR_Box n center basis sx sy sz mat
 )
 
+-- dalle à arête avant BISEAUTÉE : chanfrein ch sur l'arête inférieure côté rue
+-- (u1..u2 le long de la façade, vOut = côté rue, vIn = côté intérieur, z = dessous)
+fn FR_ChamferSlab p u1 u2 vOut vIn z th basis mat ch =
+(
+    if ch > th*0.45 do ch = th*0.45
+    if ch > (vIn - vOut)*0.45 do ch = (vIn - vOut)*0.45
+
+    if ch < 0.004 then
+        FR_LocalBox p ((u1+u2)/2) ((vOut+vIn)/2) (z+th/2) (u2-u1) (vIn-vOut) th basis mat
+    else
+    (
+        -- profil trapézoïdal dans le plan (v,z) à u = u1, extrudé vers +u par FR_Prisma
+        local pts = #(
+            (FR_Pt basis u1 (vOut+ch) z),
+            (FR_Pt basis u1 vIn z),
+            (FR_Pt basis u1 vIn (z+th)),
+            (FR_Pt basis u1 vOut (z+th)),
+            (FR_Pt basis u1 vOut (z+ch))
+        )
+
+        FR_Prisma p pts mat (u2-u1)
+    )
+)
+
 -- rectangle de mur entre u1..u2 et z1..z2, épaisseur t, sur le plan du mur
 fn FR_WallRect n u1 u2 z1 z2 t basis mat =
 (
@@ -798,7 +836,7 @@ fn FR_WinShutter p a b c winH T fw basis shutMat shutH =
 fn FR_WinCanopy p a b zbase T fw basis frameMat capK capD =
 (
     if capK == "Slab" then
-        FR_LocalBox (p+"_Cap") ((a+b)/2) (FR_VC - T/2 - capD/2) (zbase+0.04) (b-a+0.15) capD 0.08 basis frameMat
+        FR_ChamferSlab (p+"_Cap") (a-0.075) (b+0.075) (FR_VC - T/2 - capD) (FR_VC - T/2) zbase 0.08 basis frameMat 0.02
     else if capK == "Lam" then
     (
         for k = 0 to 4 do
@@ -981,9 +1019,9 @@ fn FR_Balcony p bu1 bu2 z depth proj basis slabMat railMat glassMat railK:"Glass
     local uc = (bu1+bu2)/2
     local bw = bu2-bu1
 
-    -- dalle épaisse (30 cm) : avec une grande saillie elle se lit comme une
-    -- casquette proéminente au-dessus du niveau inférieur (dessus inchangé)
-    FR_LocalBox (p+"_Slab") uc cv z bw sy 0.30 basis slabMat
+    -- dalle 15 cm à arête avant biseautée (0.6.9 : la dalle épaisse de 30 cm
+    -- est supprimée, le relief vient du chanfrein et des casquettes)
+    FR_ChamferSlab (p+"_Slab") bu1 bu2 outer inner (z-0.075) 0.15 basis slabMat 0.03
 
     -- garde-corps du balcon : suit le type choisi pour les garde-corps de fenêtres
     -- (« Aucun » garde le vitré par sécurité ; « Lisse » : seulement la main courante)
@@ -1027,7 +1065,7 @@ fn FR_Balcony p bu1 bu2 z depth proj basis slabMat railMat glassMat railK:"Glass
    bd = saillie au-delà des piliers (comme les balcons).
 ========================================================= */
 
-fn FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat =
+fn FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat simple:false =
 (
     local bw = bu2 - bu1
     local inner = -depth*0.5      -- face avant du mur
@@ -1046,26 +1084,41 @@ fn FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat =
     local cv = (inner+outer)/2
     local cz1 = z1 + 0.12
     local cz2 = z2 - 0.12
-    local flen = run*1.41421      -- longueur d'une joue à 45°
-    local fwid = bw - 2.0*run     -- largeur de la face avant
-    local c45 = 0.70711
 
-    -- dalle et capot (capot légèrement débordant)
-    FR_LocalBox (p+"_Slab") uc cv (z1+0.075) bw (inner-outer) 0.15 basis wallMat
-    FR_LocalBox (p+"_Cap") uc cv (cz2+0.06) (bw+0.08) (inner-outer+0.08) 0.12 basis wallMat
+    -- dalle et capot (capot légèrement débordant), arête avant biseautée
+    FR_ChamferSlab (p+"_Slab") bu1 bu2 outer inner (z1+0.0) 0.15 basis wallMat 0.02
+    FR_ChamferSlab (p+"_Cap") (bu1-0.04) (bu2+0.04) (outer-0.04) inner (cz2+0.0) 0.12 basis wallMat 0.02
 
-    -- bases locales des facettes (tournées, composées avec le repère de la façade)
-    local bL = (matrix3 [c45,-c45,0] [c45,c45,0] [0,0,1] [bu1, inner, 0]) * basis
-    local bF = (matrix3 [1,0,0] [0,1,0] [0,0,1] [bu1+run, outer, 0]) * basis
-    local bR = (matrix3 [c45,c45,0] [-c45,c45,0] [0,0,1] [bu2-run, outer, 0]) * basis
+    if simple then
+    (
+        -- 0.6.9 : bow-window SIMPLE (rectangulaire, sans joues à 45°) —
+        -- une seule face avant vitrée pleine largeur, poteaux d'angle droits
+        local bF = (matrix3 [1,0,0] [0,1,0] [0,0,1] [bu1, outer, 0]) * basis
 
-    FR_Glass (p+"_BowL") 0.0 flen cz1 cz2 (T*0.8) fw bL frameMat glassMat 1
-    FR_Glass (p+"_BowF") 0.0 fwid cz1 cz2 (T*0.8) fw bF frameMat glassMat 1
-    FR_Glass (p+"_BowR") 0.0 flen cz1 cz2 (T*0.8) fw bR frameMat glassMat 1
+        FR_Glass (p+"_BowF") 0.0 bw cz1 cz2 (T*0.8) fw bF frameMat glassMat 1
 
-    -- poteaux d'angle aux deux plis
-    FR_LocalBox (p+"_PostL") flen FR_VC ((cz1+cz2)/2) (fw*1.6) (T*0.8) (cz2-cz1) bL frameMat
-    FR_LocalBox (p+"_PostR") 0.0 FR_VC ((cz1+cz2)/2) (fw*1.6) (T*0.8) (cz2-cz1) bR frameMat
+        FR_LocalBox (p+"_PostL") 0.0 FR_VC ((cz1+cz2)/2) (fw*1.6) (T*0.8) (cz2-cz1) bF frameMat
+        FR_LocalBox (p+"_PostR") bw FR_VC ((cz1+cz2)/2) (fw*1.6) (T*0.8) (cz2-cz1) bF frameMat
+    )
+    else
+    (
+        local flen = run*1.41421      -- longueur d'une joue à 45°
+        local fwid = bw - 2.0*run     -- largeur de la face avant
+        local c45 = 0.70711
+
+        -- bases locales des facettes (tournées, composées avec le repère de la façade)
+        local bL = (matrix3 [c45,-c45,0] [c45,c45,0] [0,0,1] [bu1, inner, 0]) * basis
+        local bF = (matrix3 [1,0,0] [0,1,0] [0,0,1] [bu1+run, outer, 0]) * basis
+        local bR = (matrix3 [c45,c45,0] [-c45,c45,0] [0,0,1] [bu2-run, outer, 0]) * basis
+
+        FR_Glass (p+"_BowL") 0.0 flen cz1 cz2 (T*0.8) fw bL frameMat glassMat 1
+        FR_Glass (p+"_BowF") 0.0 fwid cz1 cz2 (T*0.8) fw bF frameMat glassMat 1
+        FR_Glass (p+"_BowR") 0.0 flen cz1 cz2 (T*0.8) fw bR frameMat glassMat 1
+
+        -- poteaux d'angle aux deux plis
+        FR_LocalBox (p+"_PostL") flen FR_VC ((cz1+cz2)/2) (fw*1.6) (T*0.8) (cz2-cz1) bL frameMat
+        FR_LocalBox (p+"_PostR") 0.0 FR_VC ((cz1+cz2)/2) (fw*1.6) (T*0.8) (cz2-cz1) bR frameMat
+    )
 )
 
 /* =========================================================
@@ -2413,10 +2466,11 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
                 if PR.balcVar > 0.0 do
                     bd = amax #(0.3, balcD * (1.0 + ((random -1.0 1.0) * PR.balcVar/100.0)))
 
-                if kind == "Bow" then
+                if kind == "Bow" or kind == "BowS" then
                 (
-                    -- bow-window : oriel vitré en 3 facettes sur toute la travée
-                    FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat
+                    -- bow-window : oriel vitré sur toute la travée
+                    -- (3 facettes à joues 45°, ou simple rectangulaire sans biseaux)
+                    FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat simple:(kind == "BowS")
                 )
                 else if variant == "Wall" then
                 (
@@ -3337,7 +3391,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.8" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -3414,7 +3468,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.8" width:430
     spinner spWinH "" pos:[215,476] width:190 range:[0.3,4,1.5] type:#float scale:0.05 tooltip:"Hauteur de la fenêtre."
     label l_spSill "Hauteur d'allège :" pos:[25,506] width:185 height:16
     spinner spSill "" pos:[215,504] width:190 range:[0,3,0.9] type:#float scale:0.05 tooltip:"Hauteur entre le sol de l'étage et le bas de la fenêtre."
-    dropdownList ddBalc "Balcons de l'étage :" pos:[25,532] width:380 items:#("Aucun","Saillants","Rentrants (loggias)","Filant (continu)","Bow-windows") selection:2 tooltip:"Aucun, saillants, rentrants (loggias), filants (dalle continue) ou bow-windows (oriels vitrés en 3 facettes). S'applique à TOUTES les travées de l'étage."
+    dropdownList ddBalc "Balcons de l'étage :" pos:[25,532] width:380 items:#("Aucun","Saillants","Rentrants (loggias)","Filant (continu)","Bow-windows","Bow simple (rectangulaire)") selection:2 tooltip:"Aucun, saillants, rentrants (loggias), filants (dalle continue), bow-windows (oriels vitrés en 3 facettes) ou bow simple (saillie rectangulaire sans joues inclinées). S'applique à TOUTES les travées de l'étage."
     label l_spBalcVar "Variation de profondeur (± %) :" pos:[25,576] width:185 height:16
     spinner spBalcVar "" pos:[215,574] width:190 range:[0,80,0] type:#float scale:1 tooltip:"Variation ALÉATOIRE de la profondeur des balcons et loggias, en ± % autour de la profondeur réglée (0 = profondeur fixe). Tirage par travée."
     label l_spBalcD "Profondeur balcon / loggia :" pos:[25,602] width:185 height:16
