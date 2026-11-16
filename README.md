@@ -11,6 +11,19 @@ guides d'étages et moulures balayées).
 2. Dans 3ds Max : menu *Scripting > Run Script…* et choisir le fichier.
 3. La fenêtre FRAMER s'ouvre (mode création / mode édition).
 
+## Presets d'exemple
+
+- `presets/Facade_photo.framer` — maison de ville d'après photo (7 travées, 5 étages,
+  volets battants, garde-corps barreaudés).
+- `presets/Facade_photo2.framer` — façade moderne d'après photo (balcons profonds 1,20 m).
+- `presets/Facade_photo3.framer` — résidence d'après photo (balcons filants vitrés,
+  brise-soleil à lames, 6 étages, toit-terrasse).
+- `presets/Facade_photo4.framer` — immeuble commercial d'après photo (4 travées,
+  rdc vitrines, 4 étages de porte-fenêtres, balcons individuels à garde-corps vitré,
+  casquettes, toit-terrasse avec acrotère).
+
+Copier dans `plugcfg\FRAMER\presets` puis Charger.
+
 ## Version 0.6.8
 
 - **Trou noir dans la dalle de terrasse** (toit en mode contour, plans non convexes) :
