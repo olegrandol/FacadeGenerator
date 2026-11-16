@@ -3119,8 +3119,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     /* ----- presets ----- */
 
     groupBox gbPreset "Presets (réglages sauvegardés)" pos:[10,756] width:410 height:92
-    dropdownList ddPreset "" pos:[25,776] width:348 items:#() tooltip:"Presets enregistrés. Sélectionnez-en un puis cliquez Charger."
-    button btPresetRefresh "↻" pos:[378,774] width:28 height:22 tooltip:"Réactualise la liste des presets et affiche le dossier utilisé dans la barre d'infos."
+    dropdownList ddPreset "" pos:[25,776] width:320 items:#() tooltip:"Presets enregistrés. Sélectionnez-en un puis cliquez Charger."
+    button btPresetRefresh "↻" pos:[350,774] width:28 height:22 tooltip:"Réactualise la liste des presets et affiche le dossier utilisé dans la barre d'infos."
+    button btPresetBrowse "…" pos:[382,774] width:28 height:22 tooltip:"Charger un preset depuis n'importe quel dossier (parcourir…)."
     edittext etPresetName "Nom :" pos:[25,806] width:170 height:20 tooltip:"Nom du preset à sauvegarder (ou à charger s'il existe déjà)."
     button btPresetSave "Sauver" pos:[205,804] width:62 height:22 tooltip:"Sauvegarde tous les réglages affichés sous le nom saisi."
     button btPresetLoad "Charger" pos:[271,804] width:62 height:22 tooltip:"Charge le preset sélectionné dans la liste (ou celui dont le nom est saisi)."
@@ -3856,9 +3857,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
             ddPreset.selected = (amin #(sel, names.count))
     )
 
-    fn FR_PresetApply nm =
+    fn FR_PresetApply nm path:undefined =
     (
-        local f = FR_PresetFile nm
+        local f = if path != undefined then path else FR_PresetFile nm
 
         if not doesFileExist f then
             messageBox ("Preset introuvable : " + nm + "\n\nDossier attendu : " + (FR_PresetDir()))
@@ -3918,6 +3919,18 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         lbInfo.text = "Dossier presets : " + (FR_PresetDir())
     )
 
+    on btPresetBrowse pressed do
+    (
+        local f = getOpenFileName caption:"Charger un preset FRAMER" \
+            types:"Preset FRAMER (*.framer)|*.framer|Tous les fichiers (*.*)|*.*"
+
+        if f != undefined do
+        (
+            FR_PresetApply (filenameFromPath f) path:f
+            etPresetName.text = FR_PresetCleanName (getFilenameFile f)
+        )
+    )
+
     on btPresetLoad pressed do
     (
         local sel = ddPreset.selected
@@ -3929,7 +3942,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
         else if (FR_PresetCleanName etPresetName.text) != "" then
             FR_PresetApply (FR_PresetCleanName etPresetName.text)
         else
-            messageBox ("Choisissez un preset dans la liste (ou tapez son nom).\n\nDossier des presets : " + (FR_PresetDir()) + "\n\nCliquez ↻ pour réactualiser la liste après y avoir copié un fichier .framer.")
+            messageBox ("Choisissez un preset dans la liste (ou tapez son nom), ou cliquez … pour parcourir un dossier perso.\n\nDossier des presets : " + (FR_PresetDir()) + "\n\nCliquez ↻ pour réactualiser la liste après y avoir copié un fichier .framer.")
     )
 
     on btPresetDel pressed do
