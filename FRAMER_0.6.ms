@@ -1,7 +1,15 @@
 /*
-    FRAMER 0.6.4
+    FRAMER 0.6.5
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    CORRIGÉ EN 0.6.5 :
+    - PRESETS : plantage « No "map" function » au chargement — les chaînes MAXScript
+      ne sont PAS itérables (for c in "texte") : nettoyage du nom par index
+      (substring). Fonctionnait aussi mal pour un nom vide que pour un nom valide.
+    - Presets : bouton « … » pour charger un .framer depuis n'importe quel dossier
+      (parcourir), bouton « ↻ » pour réactualiser la liste, chemin du dossier affiché
+      dans les messages.
 
     CORRIGÉ EN 0.6.4 :
     - LISSAGE SUPPRIMÉ : tous les groupes de lissage sont retirés (arêtes
@@ -2962,7 +2970,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
