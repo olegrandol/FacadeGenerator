@@ -46,6 +46,9 @@
       coordonnées locales, comme prévu.
 
     NOUVEAU EN 0.6.4 :
+    - ONGLETS RÉORDONNÉS : Général, Rdc (rez-de-chaussée), Étages, Fenêtres,
+      Toit, Hasard (ex-Variation), Moulures — les libellés sont raccourcis pour
+      tenir dans la barre d'onglets.
     - PANNEAUX PLEINS / VITRÉS ALTERNÉS (onglet Étages) : pour le type
       « Panneaux pleins », un réglage « Panneaux pleins (% des travées) » tire
       au hasard, par travée, un panneau PLEIN ou un panneau VITRÉ. 100 % :
@@ -2964,7 +2967,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     label lbEdit "Nouvelle façade : réglez puis cliquez sur Générer." pos:[25,70] width:390 height:18
     checkbox cbLive "Mise à jour en direct (mode édition)" pos:[25,92] checked:false tooltip:"Applique chaque réglage tout de suite à la façade sélectionnée."
 
-    radioButtons rbTab labels:#("Général","Étages","Rez-de-ch.","Fenêtres","Toit","Variation","Moulures") columns:7 default:1 pos:[18,132] tooltip:"Changer de page de réglages."
+    radioButtons rbTab labels:#("Général","Rdc","Étages","Fenêtres","Toit","Hasard","Moulures") columns:7 default:1 pos:[18,132] tooltip:"Changer de page de réglages. (Rdc = rez-de-chaussée, Hasard = variation aléatoire.)"
 
     /* ----- onglet 1 : Général ----- */
 
@@ -3124,9 +3127,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     -- affiche les contrôles de l'onglet n et cache les autres
     fn SetTab n =
     (
+        -- ordre des onglets : 1 Général, 2 Rdc, 3 Étages, 4 Fenêtres, 5 Toit, 6 Hasard, 7 Moulures
         local t1 = (n == 1)
-        local t2 = (n == 2)
-        local t3 = (n == 3)
+        local t2 = (n == 3)   -- Étages
+        local t3 = (n == 2)   -- Rez-de-chaussée
         local t4 = (n == 4)
         local t5 = (n == 5)
         local t6 = (n == 6)

@@ -13,6 +13,13 @@ guides d'étages et moulures balayées).
 
 ## Version 0.6.4
 
+- **Onglets réordonnés** : Général, **Rdc**, Étages, Fenêtres, Toit, **Hasard**
+  (ex-Variation), Moulures — libellés raccourcis pour tenir dans la barre
+  d'onglets.
+- **Preset d'exemple** : `presets/Facade_photo.framer` — façade reconstruite
+  d'après photo (porte 2,50 m, 7 travées, 5 étages, garde-corps barreaudés,
+  balcons saillants sauf au 1er étage). À copier dans
+  `plugcfg\FRAMER\presets` puis Charger.
 - **Panneaux pleins / vitrés alternés** (onglet Étages) : pour le type
   *Panneaux pleins*, le réglage *Panneaux pleins (% des travées)* tire au
   hasard, par travée, un panneau plein ou un panneau vitré (100 % = tous
