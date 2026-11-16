@@ -1,5 +1,5 @@
 /*
-    FRAMER 0.6.9
+    FRAMER 0.6.10
     Générateur procédural de façades
     Autodesk 3ds Max 2026
 
@@ -3461,7 +3461,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.9" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1

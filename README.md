@@ -28,7 +28,7 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
-## Version 0.6.9
+## Version 0.6.10
 
 - **Arêtes biseautées** sur les casquettes et les dalles (balcons, bow-windows) :
   chanfrein sous l'arête côté rue au lieu de la dalle rectangulaire brute.
