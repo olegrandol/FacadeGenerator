@@ -11,6 +11,14 @@
       Balcons de l'étage) : oriel vitré en saillie parallélépipédique SANS joues
       inclinées — une seule face avant vitrée pleine largeur, poteaux d'angle
       droits, dalle et capot biseautés.
+    - PLAFOND DE GALERIE PLAT (arcades) : la voûte en berceau qui se prolongeait
+      en profondeur « remplissait » l'arc ; remplacée par une dalle plate au
+      niveau de la clé de l'arc — l'arc reste lisible côté rue, la galerie garde
+      toute la hauteur, les retombées près des piliers descendent sous le
+      plafond (comme une construction réelle).
+    - PARSEUR DE PRESETS TOLÉRANT AUX COMMENTAIRES INLINE : une ligne du type
+      « width=23.0000  -- commentaire » se charge désormais sans erreur
+      (tout ce qui suit « -- » dans la valeur est ignoré).
 
     CORRIGÉ EN 0.6.9 :
     - CRASH « L'appel nécessite une fonction ou une classe : undefined » dès
@@ -580,6 +588,14 @@ fn FR_ParamsFromString txt =
         (
             local k = substring ln 1 (pos-1)
             local v = substring ln (pos+1) ln.count
+
+            -- tolère les commentaires inline : "width=23.0 -- commentaire"
+            local cpos = findString v "--"
+            if cpos != undefined do v = substring v 1 (cpos-1)
+            -- supprime les espaces résiduels (les codes texte comme
+            -- "Storefront " avec espace final ne correspondraient plus)
+            v = trimLeft (trimRight v)
+            k = trimRight k
 
             case k of
             (
@@ -1470,40 +1486,12 @@ fn FR_Arcade p bu1 bu2 groundH T depth recess lintelH arcType fw basis frameMat 
 
     FR_WallRect (p+"_Back") bu1 bu2 0.0 crown 0.1 basis wallMat
 
-    -- voûte de galerie : l'arc se prolonge en profondeur (berceau) jusqu'au fond
-    -- — c'est le plafond de la galerie ; une dalle plate couperait le haut des
-    -- arcs ou passerait trop bas sous la retombée
+    -- plafond PLAT de la galerie, au niveau de la clé de l'arc (haut de
+    -- l'ouverture) : l'arc reste lisible côté rue, la galerie garde toute
+    -- la hauteur ; les retombées près des piliers descendent sous le
+    -- plafond, comme sur une construction réelle
     if rise >= 0.05 do
-    (
-        local w = bu2 - bu1
-        local uc = (bu1 + bu2)/2
-        local rad = (rise*rise + (w/2)*(w/2)) / (2.0*rise)
-        local cy = zsp + rise - rad
-        local segs = 16
-        local xs = #()
-        local ylo = #()
-        local yhi = #()
-
-        for i = 0 to segs do
-        (
-            local x = bu1 + w*i/segs
-            local dx = x - uc
-            local q = rad*rad - dx*dx
-
-            if q < 0.0 do q = 0.0
-
-            local yy = cy + sqrt q
-
-            append xs x
-            -- 3 mm au-dessus de l'intrados : évite les faces coplanaires avec
-            -- le vitrage en arc et le mur de l'arche
-            append ylo (yy + 0.003)
-            append yhi (yy + 0.003 + fw)
-        )
-
-        -- de l'arrière du mur de façade (v=0) jusqu'au fond de galerie
-        FR_StripMesh (p+"_Vault") xs ylo yhi 0.0 (vfa + recess + T + 0.06) basis wallMat
-    )
+        FR_LocalBox (p+"_Soffit") ((bu1+bu2)/2) ((vfa + recess + T + 0.06)/2) (crown + 0.05) (bu2-bu1) (vfa + recess + T + 0.06) 0.1 basis wallMat
 
     FR_VC = oldVC
 )
@@ -2435,8 +2423,8 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
     )
 
     -- portique : plafond plat de la galerie (au-dessus de l'ouverture en linteau)
-    -- pour les ARCADES EN ARC, le plafond est la voûte elle-même (voir FR_Arcade :
-    -- l'arc se prolonge en berceau jusqu'au fond de la galerie)
+    -- pour les ARCADES EN ARC, le plafond est PLAT au niveau de la clé de
+    -- l'arc (voir FR_Arcade : bloc _Soffit)
     if isArc and PR.arcRecess > 0.3 and arcT == "Flat" do
     (
         local vfA = -depth*0.5

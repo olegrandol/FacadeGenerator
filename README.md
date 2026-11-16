@@ -49,6 +49,14 @@ Copier dans `plugcfg\FRAMER\presets` puis Charger.
   définition dans le fichier = locale implicite indéfinie en MAXScript).
   Déclarations globales anticipées : moulure, fenêtres cintrées et
   dalles/casquettes biseautées fonctionnent.
+- **Plafond de galerie PLAT au niveau de la clé de l'arc** : la voûte en berceau
+  qui se prolongeait en profondeur « remplissait » l'arc (arcades pleines).
+  Le plafond est désormais une dalle plate à la hauteur de la clé : l'arc reste
+  lisible côté rue, la galerie garde toute la hauteur, et les retombées près
+  des piliers descendent sous le plafond (comme sur une construction réelle).
+- **Parseur de presets tolérant aux commentaires inline** : une ligne de preset
+  du type `width=23.0000  -- commentaire` se charge désormais sans erreur
+  (tout ce qui suit `--` est ignoré).
 
 ## Version 0.6.8
 
