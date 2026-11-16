@@ -3548,6 +3548,13 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
             if FR_gH[k] != FR_gH[1] or FR_gMode[k] != FR_gMode[1] or FR_gWin[k] != FR_gWin[1] or FR_gHt[k] != FR_gHt[1] or FR_gSill[k] != FR_gSill[1] or FR_gBalc[k] != FR_gBalc[1] do same = false
         )
 
+        -- IMPORTANT : ddBalc AVANT la bascule rbFloors — sinon StoreFloor (déclenché par
+        -- spFloorSel.range dans le handler) recopie le DÉFAUT du dialogue (« Saillants »)
+        -- dans l'étage 1 au lieu du « Aucun » du preset
+        local bi0 = findItem FR_BalcCodes (if PR.flBalc.count > 0 then PR.flBalc[1] else "None")
+        if bi0 == 0 do bi0 = 1
+        ddBalc.selection = bi0
+
         -- IMPORTANT : flCustom AVANT rbFloors.state — affecter .state déclenche le
         -- handler « on rbFloors changed », qui fait StoreAll() si flCustom est false
         -- et écraserait les valeurs par étage du preset (balcon du 1er étage, etc.)
@@ -3891,7 +3898,22 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.5" width:430
                 close ff
             )
 
-            FR_WriteUI (FR_ParamsFromString (ss as string))
+            local pp = FR_ParamsFromString (ss as string)
+
+            FR_WriteUI pp
+
+            -- ceinture et bretelles : ré-applique les tableaux par étage, au cas où un
+            -- handler déclenché par FR_WriteUI (rbFloors, spFloorSel, ddBalc...) aurait
+            -- réécrit FR_gBalc/FR_gH/... avec les valeurs affichées
+            FR_gH = copy pp.flH
+            FR_gMode = copy pp.flMode
+            FR_gWin = copy pp.flWin
+            FR_gHt = copy pp.flHt
+            FR_gSill = copy pp.flSill
+            FR_gBalc = copy pp.flBalc
+            LoadFloor 1
+            flCustom = true
+
             lbInfo.text = "Preset chargé : " + nm
 
             if cbLive.checked and cbLive.enabled do FR_LiveTick()
