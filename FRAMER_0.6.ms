@@ -4,6 +4,17 @@
     Autodesk 3ds Max 2026
 
     CORRIGÉ EN 0.6.4 :
+    - LISSAGE SUPPRIMÉ : tous les groupes de lissage sont retirés (arêtes
+      vives, rendu facetté), sur les objets fusionnés comme sur les arches,
+      bandeaux et toits.
+    - HAUT DES ARCHES : la dalle de plafond de la galerie traversait le haut
+      des arcs (visible dans l'ouverture) — elle reste maintenant sous la ligne
+      de retombée des arches.
+    - TROUS ENTRE TRAVÉES (arcades / portique) : les vitrines reculées et leur
+      fond s'arrêtent aux limites de chaque travée — un pilier est maintenant
+      reporté au plan des vitrines, dans l'alignement des colonnes de devant.
+    - RDC MAISON DE VILLE : plus de piliers saillants — un mur continu, avec
+      les fenêtres de 1,40 × 1,20 m à allège 0,90 m centrées par travée.
     - ÉCHELLE DES FENÊTRES DU RDC MAISON DE VILLE : fenêtres à 1,40 m de large
       × 1,20 m de haut, allège à 0,90 m (taille d'une fenêtre de maison de
       ville classique ; avant, elles étaient trop grandes).
@@ -225,6 +236,18 @@ struct FRParams
 fn FR_Msg txt =
 (
     if not FR_Silent do messageBox (FR_Ctx + txt)
+)
+
+-- arêtes vives : aucun groupe de lissage sur les faces (rendu facetté)
+fn FR_NoSmooth obj =
+(
+    if obj != undefined and isValidNode obj do
+    (
+        if (classof obj) == Editable_Poly then
+            polyop.setFaceSmoothGroup obj #{1..(polyop.getNumFaces obj)} 0
+        else if (classof obj) == Editable_mesh then
+            meshop.setFaceSmoothGroup obj #{1..obj.numfaces} 0
+    )
 )
 
 -- complète ou tronque un tableau à n éléments (on répète le dernier, ou dflt si vide)
@@ -839,6 +862,7 @@ fn FR_ArchWall p u1 u2 zsp rise ztop T basis mat =
     local m = mesh vertices:vArr faces:fArr
 
     update m
+    FR_NoSmooth m
 
     m.name = p + "_Arch"
     m.material = mat
@@ -889,6 +913,7 @@ fn FR_StripMesh nm xs ylo yhi vF vB basis mat =
     local m = mesh vertices:vArr faces:fArr
 
     update m
+    FR_NoSmooth m
 
     m.name = nm
     m.material = mat
@@ -1076,6 +1101,7 @@ fn FR_Prisma p pts mat th =
         local m = mesh vertices:vArr faces:fArr
 
         update m
+        FR_NoSmooth m
 
         m.name = p
         m.material = mat
@@ -1253,6 +1279,7 @@ fn FR_RoofSlabContour p pts z0 th mat =
         local m = mesh vertices:vArr faces:fArr
 
         update m
+        FR_NoSmooth m
 
         m.name = p
         m.material = mat
@@ -1332,6 +1359,7 @@ fn FR_RoofCapContour p pts z mat =
         local m = mesh vertices:vArr faces:fArr
 
         update m
+        FR_NoSmooth m
 
         m.name = p
         m.material = mat
@@ -1567,6 +1595,9 @@ fn FR_Merge basis tag =
                 polyop.attach main grp[k]
             )
 
+            -- arêtes vives : suppression de tous les groupes de lissage
+            FR_NoSmooth main
+
             -- "FRAMER_Glass" -> "<nom de la racine>_Glass"
             main.name = tag + "_" + (substring mn 8 mn.count)
             main.pivot = basis[4]
@@ -1762,6 +1793,23 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
                 -- le mur des étages passe au-dessus
                 FR_LocalBox ("FRAMER_Column_"+(k as string)) u (-depth + pier/2) (groundH/2) pier pier groundH basis pierMat
                 FR_WallRect ("FRAMER_WallPier_"+(k as string)) (u - pier/2) (u + pier/2) groundH totalH T basis wallMat
+
+                -- pilier reporté au plan des vitrines reculées : bouche les trous
+                -- entre deux travées (le vitrage et le fond s'arrêtent aux limites
+                -- de chaque travée)
+                local oldVC = FR_VC
+
+                FR_VC = -depth*0.5 + PR.arcRecess + T/2
+
+                FR_WallRect ("FRAMER_BackPier_"+(k as string)) (u - pier/2) (u + pier/2) 0.0 (groundH - PR.arcLintel) T basis pierMat
+
+                FR_VC = oldVC
+            )
+            else if PR.groundMode == "TownHouse" then
+            (
+                -- maison de ville : pas de piliers saillants — un simple mur continu
+                -- (la bande couvre l'intervalle entre deux travées, sur toute la hauteur)
+                FR_WallRect ("FRAMER_WallStrip_"+(k as string)) (u - pier/2) (u + pier/2) 0.0 totalH T basis wallMat
             )
             else
             (
@@ -1866,7 +1914,20 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
         -- portique : le plafond part de la face avant des colonnes
         if isPort do vfA = -depth
 
-        local gz = groundH - PR.arcLintel - 0.15
+        -- le plafond doit rester SOUS la ligne de retombée des arches :
+        -- sinon la dalle traverse le haut des arcs (visible dans l'ouverture)
+        local maxRise = 0.0
+
+        if arcT == "Round" then
+            maxRise = (amax bayW)/2
+        else if arcT == "Segment" then
+            maxRise = (amax bayW)*0.18
+
+        local zspMin = groundH - PR.arcLintel - maxRise
+
+        if zspMin < 2.2 do zspMin = 2.2
+
+        local gz = zspMin - 0.15
 
         if gz < 1.0 do gz = 1.0
 
@@ -2708,6 +2769,7 @@ fn FR_SweepMesh pts prof isCl =
     local msh = mesh vertices:vArr faces:fArr
 
     update msh
+    FR_NoSmooth msh
 
     msh
 )

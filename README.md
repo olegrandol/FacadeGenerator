@@ -13,6 +13,15 @@ guides d'étages et moulures balayées).
 
 ## Version 0.6.4
 
+- **Lissage supprimé** : tous les groupes de lissage sont retirés (arêtes
+  vives, rendu facetté) sur les objets fusionnés comme sur les arches et toits.
+- **Haut des arches** : la dalle de plafond de la galerie traversait le haut
+  des arcs — elle reste maintenant sous la ligne de retombée des arches.
+- **Arcades / portique** : un pilier est reporté au plan des vitrines
+  reculées, dans l'alignement des colonnes de devant (plus de trous entre deux
+  travées, le vitrage et le fond s'arrêtant aux limites de travée).
+- **Rdc maison de ville** : plus de piliers saillants — un mur continu avec
+  les fenêtres de 1,40 × 1,20 m à allège 0,90 m centrées par travée.
 - **Échelle des fenêtres du rdc maison de ville** : fenêtres à **1,40 m de large
   × 1,20 m de haut**, allège à **0,90 m** (avant, elles étaient trop grandes).
 - **Hauteur des portes unifiée et réglable** : toutes les portes ont la même
