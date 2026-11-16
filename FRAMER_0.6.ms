@@ -2030,7 +2030,9 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
                 if kind == "Cont" do variant = "Wide"
 
                 -- tirages volets roulants et casquettes (après les variantes, pour garder la séquence du hasard)
-                local railK = PR.railMode
+                -- pas de garde-corps de fenêtre s'il y a un balcon ou une loggia :
+                -- c'est le balcon qui porte le garde-corps (sinon deux garde-corps superposés)
+                local railK = if kind == "None" then PR.railMode else "None"
                 local shutOpen = -1.0
 
                 if PR.shutPct > 0.0 and (random 0.0 100.0) < PR.shutPct do shutOpen = PR.shutOpen
