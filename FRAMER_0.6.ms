@@ -7,9 +7,12 @@
     - LISSAGE SUPPRIMÉ : tous les groupes de lissage sont retirés (arêtes
       vives, rendu facetté), sur les objets fusionnés comme sur les arches,
       bandeaux et toits.
-    - HAUT DES ARCHES : la dalle de plafond de la galerie traversait le haut
-      des arcs (visible dans l'ouverture) — elle reste maintenant sous la ligne
-      de retombée des arches.
+    - HAUT DES ARCHES / PLAFOND DE GALERIE : l'arc se prolonge maintenant en
+      PROFONDEUR (voûte en berceau) jusqu'au fond de la galerie — c'est le
+      plafond, à la hauteur de la clé de l'arc. Avant, une dalle plate
+      traversait le haut des arcs, puis (correctif intermédiaire) plafonnait
+      trop bas sous la retombée, et les arcs paraissaient tronqués côté
+      galerie. Le portique (linteau droit) garde son plafond plat.
     - TROUS ENTRE TRAVÉES (arcades / portique) : les vitrines reculées et leur
       fond s'arrêtent aux limites de chaque travée — un pilier est maintenant
       reporté au plan des vitrines, dans l'alignement des colonnes de devant.
@@ -1048,6 +1051,41 @@ fn FR_Arcade p bu1 bu2 groundH T depth recess lintelH arcType fw basis frameMat 
 
     FR_WallRect (p+"_Back") bu1 bu2 0.0 crown 0.1 basis wallMat
 
+    -- voûte de galerie : l'arc se prolonge en profondeur (berceau) jusqu'au fond
+    -- — c'est le plafond de la galerie ; une dalle plate couperait le haut des
+    -- arcs ou passerait trop bas sous la retombée
+    if rise >= 0.05 do
+    (
+        local w = bu2 - bu1
+        local uc = (bu1 + bu2)/2
+        local rad = (rise*rise + (w/2)*(w/2)) / (2.0*rise)
+        local cy = zsp + rise - rad
+        local segs = 16
+        local xs = #()
+        local ylo = #()
+        local yhi = #()
+
+        for i = 0 to segs do
+        (
+            local x = bu1 + w*i/segs
+            local dx = x - uc
+            local q = rad*rad - dx*dx
+
+            if q < 0.0 do q = 0.0
+
+            local yy = cy + sqrt q
+
+            append xs x
+            -- 3 mm au-dessus de l'intrados : évite les faces coplanaires avec
+            -- le vitrage en arc et le mur de l'arche
+            append ylo (yy + 0.003)
+            append yhi (yy + 0.003 + fw)
+        )
+
+        -- de l'arrière du mur de façade (v=0) jusqu'au fond de galerie
+        FR_StripMesh (p+"_Vault") xs ylo yhi 0.0 (vfa + recess + T + 0.06) basis wallMat
+    )
+
     FR_VC = oldVC
 )
 
@@ -1908,28 +1946,17 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
         -- "Empty bay" : passage ouvert, rien n'est généré
     )
 
-    -- arcades : plafond de la galerie couverte (sous la clef des arches)
-    if isArc and PR.arcRecess > 0.3 do
+    -- portique : plafond plat de la galerie (au-dessus de l'ouverture en linteau)
+    -- pour les ARCADES EN ARC, le plafond est la voûte elle-même (voir FR_Arcade :
+    -- l'arc se prolonge en berceau jusqu'au fond de la galerie)
+    if isArc and PR.arcRecess > 0.3 and arcT == "Flat" do
     (
         local vfA = -depth*0.5
 
         -- portique : le plafond part de la face avant des colonnes
         if isPort do vfA = -depth
 
-        -- le plafond doit rester SOUS la ligne de retombée des arches :
-        -- sinon la dalle traverse le haut des arcs (visible dans l'ouverture)
-        local maxRise = 0.0
-
-        if arcT == "Round" then
-            maxRise = (amax bayW)/2
-        else if arcT == "Segment" then
-            maxRise = (amax bayW)*0.18
-
-        local zspMin = groundH - PR.arcLintel - maxRise
-
-        if zspMin < 2.2 do zspMin = 2.2
-
-        local gz = zspMin - 0.15
+        local gz = groundH - PR.arcLintel - 0.15
 
         if gz < 1.0 do gz = 1.0
 
