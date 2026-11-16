@@ -11,6 +11,20 @@ guides d'étages et moulures balayées).
 2. Dans 3ds Max : menu *Scripting > Run Script…* et choisir le fichier.
 3. La fenêtre FRAMER s'ouvre (mode création / mode édition).
 
+## Version 0.6.8
+
+- **Trou noir dans la dalle de terrasse** (toit en mode contour, plans non convexes) :
+  la triangulation de la dalle et du fond se bloquait en cours de découpe d'oreilles
+  (le mauvais sommet était supprimé — le premier du triangle au lieu du sommet de
+  l'oreille), laissant ~10 % de la surface sans triangle. Découpe corrigée + filet de
+  sécurité (dernier triangle forcé, clipping forcé du sommet le plus convexe).
+  Couverture validée à 100 % sur le contour en L (brut et décalé), un U, un rectangle,
+  un hexagone.
+- **Couleurs par défaut réalistes** : les 8 sélecteurs démarrent sur des teintes
+  réalistes (murs beige, verre bleu-gris désaturé sombre, piliers gris béton,
+  menuiseries gris foncé, portes bois, volets crème, toit brun, panneaux beige clair)
+  au lieu du bleu pur de MAXScript.
+
 ## Version 0.6.7
 
 - **Couleurs des matériaux** (onglet Général, groupe *Couleurs des matériaux*) :

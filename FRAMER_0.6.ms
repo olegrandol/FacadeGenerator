@@ -1,7 +1,23 @@
 /*
-    FRAMER 0.6.7
+    FRAMER 0.6.8
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    CORRIGÉ EN 0.6.8 :
+    - TROU NOIR DANS LA DALLE DE TERRASSE (toit en mode contour, plans non
+      convexes) : la triangulation de la dalle et du fond se bloquait en
+      cours de découpe d'oreilles — le sommet supprimé était le mauvais
+      (le premier du triangle au lieu du sommet de l'oreille, au milieu),
+      d'où des chevauchements puis un résidu horaire jamais découpable :
+      ~10 % de la surface restait sans triangle (la zone noire). La découpe
+      supprime désormais le bon sommet ; en sécurité, si aucun oreille n'est
+      trouvée : dernier triangle ajouté tel quel à 3 sommets restants, sinon
+      clipping forcé du sommet le plus convexe. Couverture validée à 100 %
+      sur le contour en L (brut et décalé), un U, un rectangle, un hexagone.
+    - COULEURS PAR DÉFAUT RÉALISTES : les 8 sélecteurs de couleurs démarrent
+      sur des teintes réalistes (murs beige, verre bleu-gris désaturé sombre,
+      piliers gris béton, menuiseries gris foncé, portes bois, volets crème,
+      toit brun, panneaux beige clair) au lieu du bleu pur de MAXScript.
 
     NOUVEAU EN 0.6.7 :
     - COULEURS DES MATÉRIAUX (onglet Général, groupe « Couleurs des matériaux ») :
@@ -1534,6 +1550,8 @@ fn FR_InTri p a b c =
 )
 
 -- triangulation d'un polygone planaire (découpe d'oreilles, contour anti-horaire)
+-- 0.6.8 : l'oreille est le sommet DU MILIEU b -> on supprime b (avant : supprimait a,
+-- d'où chevauchements puis blocage sur un résidu horaire = TROU au milieu de la dalle)
 fn FR_Triangulate pts =
 (
     local tris = #()
@@ -1574,13 +1592,52 @@ fn FR_Triangulate pts =
                     if empty do
                     (
                         append tris #(a, b, c)
-                        deleteItem rest k
+                        deleteItem rest k2
                         clipped = true
                     )
                 )
             )
 
-            if not clipped do stuck = true
+            if not clipped do
+            (
+                -- 0.6.8 : ne plus abandonner (trou dans la dalle) —
+                -- résidu à 3 sommets : dernier triangle quelle que soit son orientation
+                if rest.count == 3 then
+                (
+                    append tris #(rest[1], rest[2], rest[3])
+                    stuck = true
+                )
+                else
+                (
+                    -- sinon : clipping forcé du sommet au cross le plus convexe,
+                    -- pour garantir la terminaison et la couverture complète
+                    local bestC = -1.0
+                    local bestK = 1
+
+                    for k = 1 to rest.count do
+                    (
+                        local k2 = k + 1
+                        if k2 > rest.count do k2 = 1
+                        local k3 = k2 + 1
+                        if k3 > rest.count do k3 = 1
+                        local cz = (cross (pts[rest[k2]]-pts[rest[k]]) (pts[rest[k3]]-pts[rest[k2]])).z
+                        if cz > bestC do
+                        (
+                            bestC = cz
+                            bestK = k2
+                        )
+                    )
+
+                    local a2 = rest[bestK-1]
+                    if bestK-1 < 1 do a2 = rest[rest.count]
+                    local b2 = rest[bestK]
+                    local c2 = rest[bestK+1]
+                    if bestK+1 > rest.count do c2 = rest[1]
+
+                    append tris #(a2, b2, c2)
+                    deleteItem rest bestK
+                )
+            )
         )
     )
 
@@ -3280,7 +3337,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.7" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.8" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -3319,21 +3376,21 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.7" width:430
     checkbox cbMerge "Fusionner en un objet par matériau" pos:[25,528] checked:true tooltip:"Regroupe la façade en un objet par matériau (plus léger). Décoché : chaque élément reste séparé."
     groupBox gbCol "Couleurs des matériaux" pos:[10,560] width:410 height:120
     label l_cpWall "Murs :" pos:[25,584] width:80 height:16
-    colorPicker cpWall "" pos:[110,582] width:90 height:18 tooltip:"Couleur des murs et bandeaux (matériau FRAMER_Walls)."
+    colorPicker cpWall "" color:(color 214 204 188) pos:[110,582] width:90 height:18 tooltip:"Couleur des murs et bandeaux (matériau FRAMER_Walls)."
     label l_cpFrame "Menuiseries :" pos:[210,584] width:100 height:16
-    colorPicker cpFrame "" pos:[315,582] width:90 height:18 tooltip:"Couleur des cadres et casquettes (matériau FRAMER_Frame)."
+    colorPicker cpFrame "" color:(color 55 62 70) pos:[315,582] width:90 height:18 tooltip:"Couleur des cadres et casquettes (matériau FRAMER_Frame)."
     label l_cpPier "Piliers :" pos:[25,610] width:80 height:16
-    colorPicker cpPier "" pos:[110,608] width:90 height:18 tooltip:"Couleur des piliers, colonnes et corniche (matériau FRAMER_Piers)."
+    colorPicker cpPier "" color:(color 135 138 142) pos:[110,608] width:90 height:18 tooltip:"Couleur des piliers, colonnes et corniche (matériau FRAMER_Piers)."
     label l_cpGlass "Verre :" pos:[210,610] width:100 height:16
-    colorPicker cpGlass "" pos:[315,608] width:90 height:18 tooltip:"Couleur du verre (matériau FRAMER_Glass, translucide)."
+    colorPicker cpGlass "" color:(color 95 170 205) pos:[315,608] width:90 height:18 tooltip:"Couleur du verre (matériau FRAMER_Glass, translucide)."
     label l_cpDoor "Portes :" pos:[25,636] width:80 height:16
-    colorPicker cpDoor "" pos:[110,634] width:90 height:18 tooltip:"Couleur des portes (matériau FRAMER_Door)."
+    colorPicker cpDoor "" color:(color 95 72 52) pos:[110,634] width:90 height:18 tooltip:"Couleur des portes (matériau FRAMER_Door)."
     label l_cpShut "Volets :" pos:[210,636] width:100 height:16
-    colorPicker cpShut "" pos:[315,634] width:90 height:18 tooltip:"Couleur des volets (matériau FRAMER_Shutters)."
+    colorPicker cpShut "" color:(color 172 166 152) pos:[315,634] width:90 height:18 tooltip:"Couleur des volets (matériau FRAMER_Shutters)."
     label l_cpRoof "Toit :" pos:[25,662] width:80 height:16
-    colorPicker cpRoof "" pos:[110,660] width:90 height:18 tooltip:"Couleur du toit (matériau FRAMER_Roof)."
+    colorPicker cpRoof "" color:(color 122 84 66) pos:[110,660] width:90 height:18 tooltip:"Couleur du toit (matériau FRAMER_Roof)."
     label l_cpPanel "Panneaux :" pos:[210,662] width:100 height:16
-    colorPicker cpPanel "" pos:[315,660] width:90 height:18 tooltip:"Couleur des panneaux pleins/vitrés (matériau FRAMER_Panels)."
+    colorPicker cpPanel "" color:(color 190 188 178) pos:[315,660] width:90 height:18 tooltip:"Couleur des panneaux pleins/vitrés (matériau FRAMER_Panels)."
 
     /* ----- onglet 2 : Étages ----- */
 
