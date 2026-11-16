@@ -2935,11 +2935,15 @@ fn FR_PresetCleanName nm =
     local out = ""
 
     if nm == undefined do nm = ""
+    nm = trimLeft (trimRight nm)
 
-    -- une chaîne VIDE ne s'itère pas ("No map function") : on la filtre d'abord
-    if (trimLeft (trimRight nm)) != "" do
-        for c in (trimLeft (trimRight nm)) do
-            out += if (findString bad c) == undefined then c else "_"
+    -- une chaîne (vide ou pas) n'est PAS itérable en MAXScript ("No "map" function") :
+    -- on parcourt par index
+    for i = 1 to nm.count do
+    (
+        local c = substring nm i 1
+        out += if (findString bad c) == undefined then c else "_"
+    )
 
     out
 )
