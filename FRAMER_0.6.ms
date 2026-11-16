@@ -4,13 +4,19 @@
     Autodesk 3ds Max 2026
 
     NOUVEAU EN 0.6.4 :
+    - VOLETS BATTANTS À DEUX VANTAUX : vrais volets à pivoter, fermés devant la
+      fenêtre (ouverture 0 %) ou ouverts à plat contre le mur (100 %), rotation
+      réelle intermédiaire. Le réglage « Ouverture du volet (%) » de l'onglet
+      Fenêtres commande l'angle.
+    - STYLE D'ÉTAGE « MAISON DE VILLE (VOLETS BATTANTS) » (nouveau choix du menu
+      Type de l'étage) : comme « Fenêtres », mais chaque fenêtre reçoit des
+      volets battants (pas de tirage au hasard : toutes les fenêtres en ont).
     - RDC « MAISON DE VILLE » (nouveau choix du menu Type du rez-de-chaussée) :
-      mur plein avec une fenêtre standard encadrée par travée, et la porte
-      d'entrée sur la travée d'entrée (réglage Entrée de l'onglet Général).
-      Les volets roulants (onglet Fenêtres : pourcentage + ouverture) et les
-      casquettes/brise-soleil s'appliquent aussi aux fenêtres du rez-de-chaussée.
-      Idéal avec : rez-de-chaussée 3–4 m, 2 étages « Fenêtres », volets à 100 %,
-      toit à deux pentes ou quatre pans.
+      mur plein avec une fenêtre standard encadrée par travée — avec volets
+      battants — et la porte d'entrée sur la travée d'entrée (réglage Entrée de
+      l'onglet Général). Les casquettes/brise-soleil s'appliquent aussi au rdc.
+      Idéal avec : rez-de-chaussée 3–4 m, 2 étages « Maison de ville », volets
+      fermés (0 %) ou ouverts (100 %), toit à deux pentes ou quatre pans.
 
     NOUVEAU EN 0.6.3 :
     - PRESETS : sauvegardez vos réglages et rechargez-les à tout moment (groupe
@@ -117,7 +123,7 @@ global FR_Ctx = ""         -- préfixe des messages ("Segment 2 : ...")
 global FR_GroundCodes = #("Storefront","Door + sidelight","Alternating storefront / door","Opaque infill","Empty bay","Arcade","Portico","TownHouse")
 global FR_ArcCodes = #("Round","Segment","Flat")
 global FR_LastRoot = undefined   -- façade actuellement en édition
-global FR_UpperCodes = #("Window","Glazed panel","Opaque panel","Plain wall")
+global FR_UpperCodes = #("Window","Glazed panel","Opaque panel","Plain wall","TownWin")
 global FR_BalcCodes = #("None","Out","In","Cont")
 global FR_EntCodes = #("None","Center","Left","Right","Random")
 global FR_RailCodes = #("None","Glass","Bars","Solid")
@@ -572,9 +578,43 @@ fn FR_WinCanopy p a b zbase T fw basis frameMat capK capD =
     )
 )
 
+-- volet battant : un vantail pivoté autour de ses gonds verticales
+-- deg = 0 (fermé, devant la fenêtre) à 180 (ouvert à plat contre le mur)
+fn FR_ShutterLeaf p hx vF zbot lw th winH basis mat deg =
+(
+    local a = deg * 0.0174532925199433
+    local du = cos a
+    local dv = -(sin a)   -- la rotation passe par l'extérieur (v négatif = rue)
+
+    local b = box name:p width:lw length:th height:winH mapCoords:true
+
+    b.transform = matrix3 (basis[1]*du + basis[2]*dv) (basis[1]*(-dv) + basis[2]*du) basis[3] \
+        (basis[4] + basis[1]*(hx + du*lw/2) + basis[2]*(vF + dv*lw/2) + basis[3]*zbot)
+    b.material = mat
+
+    append FR_Pool b
+
+    b
+)
+
+-- paire de volets battants sur une fenêtre a..b, du sol c à c+winH
+-- openPct : 0 = fermé (les deux vantaux couvrent la fenêtre), 100 = ouvert à plat contre le mur
+fn FR_ShutterBattant p a b c winH T fw basis mat openPct =
+(
+    local vF = FR_VC - T/2 - 0.035   -- plan des gonds, devant le vitrage
+    local lw = (b - a)/2 + 0.015
+    local deg = amin #(amax #(openPct, 0.0), 100.0) * 1.8
+
+    -- vantail gauche : gonds au bord gauche, fermé = s'étend vers la droite
+    FR_ShutterLeaf (p+"_ShutL") a vF c lw 0.04 winH basis mat deg
+    -- vantail droit : gonds au bord droit, fermé = s'étend vers la gauche
+    FR_ShutterLeaf (p+"_ShutR") b vF c lw 0.04 winH basis mat (180.0 - deg)
+)
+
 /* =========================================================
    MUR AVEC OUVERTURE CENTRÉE (trumeaux, allège, linteau + fenêtre)
    Options facultatives (mots-clés) : garde-corps, volet, casquette
+   Renvoie #(a, a+winW, c, c+winH) : rectangle de la fenêtre, ou undefined
 ========================================================= */
 
 fn FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat winW winH sill railK:"None" railH:1.0 railD:0.15 shutOpen:-1.0 capK:"None" capD:0.4 =
@@ -588,6 +628,8 @@ fn FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat winW winH 
     if winH < 0.3 or winW < 0.3 then
     (
         FR_WallRect (p+"_Wall") bu1 bu2 z1 z2 T basis wallMat
+
+        undefined
     )
     else
     (
@@ -622,6 +664,8 @@ fn FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat winW winH 
 
             FR_WinCanopy p a (a+winW) zb T fw basis frameMat capK capD
         )
+
+        #(a, a+winW, c, c+winH)
     )
 )
 
@@ -1747,11 +1791,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
             local wW = amin #(amax #(bw*0.55, 0.8), 1.6)
             local wH = amin #(1.5, groundH - 1.1)
 
-            -- tirages volets roulants et casquettes (mêmes réglages que les étages)
-            local shutOpen = -1.0
-
-            if PR.shutPct > 0.0 and (random 0.0 100.0) < PR.shutPct do shutOpen = PR.shutOpen
-
+            -- tirage casquettes (mêmes réglages que les étages)
             local capK = "None"
 
             if PR.capMode != "None" do
@@ -1762,7 +1802,11 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
                     capK = PR.capMode
             )
 
-            FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat wW wH 0.9 shutOpen:shutOpen capK:capK capD:PR.capD
+            -- volets battants à deux vantaux sur toutes les fenêtres du rdc
+            local wr = FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat wW wH 0.9 capK:capK capD:PR.capD
+
+            if wr != undefined do
+                FR_ShutterBattant p (wr[1]) (wr[2]) (wr[3]) (wr[4]) T fw basis (FR_Material "FRAMER_Shutters" (color 172 166 152) 100) PR.shutOpen
         )
         -- "Empty bay" : passage ouvert, rien n'est généré
     )
@@ -1806,7 +1850,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
 
             p = pf + "_B" + (i as string)
 
-            if fm == "Window" then
+            if fm == "Window" or fm == "TownWin" then
             (
                 local variant = colVar[i]
 
@@ -1818,6 +1862,9 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
                 local shutOpen = -1.0
 
                 if PR.shutPct > 0.0 and (random 0.0 100.0) < PR.shutPct do shutOpen = PR.shutOpen
+
+                -- style maison de ville : pas de volet roulant, les battants sont dessinés à part
+                if fm == "TownWin" do shutOpen = -1.0
 
                 local capK = "None"
 
@@ -1840,17 +1887,23 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 =
                 )
                 else
                 (
+                    local wr = undefined
+
                     if variant == "Window" then
                     (
-                        FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat (bw*fWin/100.0) fHt fSill railK:railK railH:PR.railH railD:PR.railD shutOpen:shutOpen capK:capK capD:PR.capD
+                        wr = FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat (bw*fWin/100.0) fHt fSill railK:railK railH:PR.railH railD:PR.railD shutOpen:shutOpen capK:capK capD:PR.capD
                     )
                     else
                     (
                         local wideW = amin #((bw*(fWin+15.0)/100.0), (bw*0.92))
                         local wideH = amin #(2.3, (uH-0.25))
 
-                        FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat wideW wideH 0.0 railK:railK railH:PR.railH railD:PR.railD shutOpen:shutOpen capK:capK capD:PR.capD
+                        wr = FR_WallWindow p bu1 bu2 z1 z2 T fw basis wallMat frameMat glassMat wideW wideH 0.0 railK:railK railH:PR.railH railD:PR.railD shutOpen:shutOpen capK:capK capD:PR.capD
                     )
+
+                    -- volets battants à deux vantaux (style maison de ville)
+                    if fm == "TownWin" and wr != undefined do
+                        FR_ShutterBattant p (wr[1]) (wr[2]) (wr[3]) (wr[4]) T fw basis (FR_Material "FRAMER_Shutters" (color 172 166 152) 100) PR.shutOpen
 
                     -- balcon saillant : réglage d'étage (kind) OU variante tirée au hasard
                     if kind == "Out" or variant == "Balcony" do
@@ -2765,7 +2818,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.4" width:430
     groupBox gb5 "Réglages de l'étage affiché" pos:[10,318] width:410 height:270
     label l_spUpper "Hauteur de l'étage :" pos:[25,344] width:185 height:16
     spinner spUpper "" pos:[215,342] width:190 range:[2,15,3] type:#float scale:0.1 tooltip:"Hauteur de l'étage affiché (de tous les étages en mode identiques)."
-    dropdownList ddUpper "Type de l'étage :" pos:[25,370] width:380 items:#("Fenêtres","Panneaux vitrés","Panneaux pleins","Mur plein") selection:1 tooltip:"Fenêtres dans un mur, panneaux vitrés, panneaux pleins ou mur plein."
+    dropdownList ddUpper "Type de l'étage :" pos:[25,370] width:380 items:#("Fenêtres","Panneaux vitrés","Panneaux pleins","Mur plein","Maison de ville (volets battants)") selection:1 tooltip:"Fenêtres dans un mur, panneaux vitrés, panneaux pleins, mur plein, ou maison de ville : fenêtres avec volets battants à deux vantaux (ouverture réglée par « Ouverture du volet »)."
     label l_spWinW "Largeur fenêtre (% travée) :" pos:[25,422] width:185 height:16
     spinner spWinW "" pos:[215,420] width:190 range:[20,100,70] type:#float scale:1 tooltip:"Largeur de la fenêtre en pourcentage de la largeur de la travée."
     label l_spWinH "Hauteur fenêtre :" pos:[25,450] width:185 height:16

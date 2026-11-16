@@ -13,12 +13,19 @@ guides d'étages et moulures balayées).
 
 ## Version 0.6.4
 
+- **Volets battants à deux vantaux** : vrais volets pivotés — fermés devant la
+  fenêtre (ouverture 0 %) ou ouverts à plat contre le mur (100 %), avec
+  rotation réelle intermédiaire. L'angle suit le réglage « Ouverture du volet
+  (%) » de l'onglet Fenêtres.
+- **Style d'étage « Maison de ville (volets battants) »** (nouveau choix dans
+  *Type de l'étage*) : comme « Fenêtres », mais toutes les fenêtres reçoivent
+  des volets battants.
 - **Rez-de-chaussée « Maison de ville »** (nouveau choix dans *Type du
-  rez-de-chaussée*) : mur plein avec une fenêtre standard encadrée par travée,
-  et la porte d'entrée sur la travée d'entrée. Les volets roulants (pourcentage
-  + ouverture) et les casquettes/brise-soleil s'appliquent aussi aux fenêtres
-  du rez-de-chaussée. Recette type : rez 3–4 m, 2 étages « Fenêtres », volets
-  à 100 %, toit à deux pentes ou quatre pans.
+  rez-de-chaussée*) : mur plein avec une fenêtre standard encadrée par travée
+  (volets battants), et la porte d'entrée sur la travée d'entrée. Les
+  casquettes/brise-soleil s'appliquent aussi au rdc. Recette type : rez 3–4 m,
+  2 étages « Maison de ville », volets fermés ou ouverts, toit à deux pentes
+  ou quatre pans.
 
 ## Version 0.6.3
 
