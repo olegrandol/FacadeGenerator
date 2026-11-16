@@ -2934,8 +2934,12 @@ fn FR_PresetCleanName nm =
     local bad = "\\\\/*:?\"<>|"
     local out = ""
 
-    for c in (trimLeft (trimRight nm)) do
-        out += if (findString bad c) == undefined then c else "_"
+    if nm == undefined do nm = ""
+
+    -- une chaîne VIDE ne s'itère pas ("No map function") : on la filtre d'abord
+    if (trimLeft (trimRight nm)) != "" do
+        for c in (trimLeft (trimRight nm)) do
+            out += if (findString bad c) == undefined then c else "_"
 
     out
 )
