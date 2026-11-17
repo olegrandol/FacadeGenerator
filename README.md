@@ -28,6 +28,15 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.12
+
+- **Nombre de portes réglable** dans le rdc *Alternance vitrine / porte* :
+  nouveau réglage *Nombre de portes (alternance)* (onglet Rez-de-chaussée).
+  0 = automatique (une porte sur deux, comme avant) ; 1 à 20 = nombre exact
+  de portes, réparties régulièrement avec des vitrines entre elles
+  (ex. 6 travées, 2 portes : V V P V V P). La travée d'entrée reste
+  prioritaire. Enregistré dans les presets (`nDoors`).
+
 ## Version 0.6.11
 
 - **Toit mansardé** (nouveau choix *Mansard (brisis + terrasson)* du menu

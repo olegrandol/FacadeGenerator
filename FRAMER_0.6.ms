@@ -1,7 +1,17 @@
 /*
-    FRAMER 0.6.11
+    FRAMER 0.6.12
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.12 :
+    - NOMBRE DE PORTES RÉGLABLE dans le rdc « Alternance vitrine / porte » :
+      nouveau réglage « Nombre de portes (alternance) » de l'onglet
+      Rez-de-chaussée — 0 = automatique (une porte sur deux, comme avant) ;
+      1 à 20 = nombre EXACT de portes, réparties régulièrement le long de la
+      façade avec des vitrines entre elles (ex. 6 travées et 2 portes :
+      vitrine vitrine PORTE vitrine vitrine PORTE). La travée d'entrée reste
+      prioritaire (elle garde sa position et sa largeur). Enregistré dans les
+      presets (nDoors, FRAMER_PARAMS=16).
 
     NOUVEAU EN 0.6.11 :
     - TOIT MANSARDÉ (nouveau choix « Mansard (brisis + terrasson) » du menu
@@ -376,6 +386,7 @@ struct FRParams
     entrance = "Center",
     entranceFactor = 1.6,
     doorH = 3.0,
+    nDoors = 0,               -- mode « Alternance vitrine / porte » : 0 = une porte sur deux (auto) ; >= 1 = nombre exact de portes
     cornice = true,
     arcType = "Round",
     arcRecess = 2.0,
@@ -541,7 +552,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=15\n" to:ss
+    format "FRAMER_PARAMS=16\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -568,6 +579,7 @@ fn FR_ParamsToString PR =
     format "entrance=%\n" PR.entrance to:ss
     format "entranceFactor=%\n" (FR_F PR.entranceFactor) to:ss
     format "doorH=%\n" (FR_F PR.doorH) to:ss
+    format "nDoors=%\n" PR.nDoors to:ss
     format "cornice=%\n" PR.cornice to:ss
     format "arcType=%\n" PR.arcType to:ss
     format "arcRecess=%\n" (FR_F PR.arcRecess) to:ss
@@ -674,6 +686,7 @@ fn FR_ParamsFromString txt =
                 "entrance": PR.entrance = v
                 "entranceFactor": PR.entranceFactor = v as float
                 "doorH": PR.doorH = v as float
+                "nDoors": PR.nDoors = v as integer
                 "cornice": PR.cornice = (v == "true")
                 "arcType": PR.arcType = v
                 "arcRecess": PR.arcRecess = v as float
@@ -2452,6 +2465,28 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
 
     /* ---------- rez-de-chaussée ---------- */
 
+    -- répartition des portes du mode « Alternance vitrine / porte » :
+    -- nDoors = 0 -> une travée sur deux (comportement d'origine) ;
+    -- nDoors >= 1 -> nombre exact de portes, réparties régulièrement
+    local doorSet = #()
+    if PR.groundMode == "Alternating storefront / door" do
+    (
+        if PR.nDoors >= 1 then
+        (
+            local nD = (amin #((PR.nDoors as integer), bays))
+            for k = 1 to nD do
+            (
+                local fbi = floor (((k - 0.5) * bays) / (nD as float))
+                local bi = 1 + (fbi as integer)
+                if findItem doorSet bi == 0 do append doorSet bi
+            )
+        )
+        else
+        (
+            for k = 2 to bays by 2 do append doorSet k
+        )
+    )
+
     for i = 1 to bays do
     (
         bu1 = bayU[i]
@@ -2467,12 +2502,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
         if mode == "Portico" do mode = "Arcade"
 
         if mode == "Alternating storefront / door" then
-        (
-            if (mod i 2) == 1 then
-                mode = "Storefront"
-            else
-                mode = "Door + sidelight"
-        )
+            mode = (if findItem doorSet i > 0 then "Door + sidelight" else "Storefront")
 
         if i == entIdx and mode != "Arcade" do mode = "Entrance"
 
@@ -3622,7 +3652,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.12" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -3716,7 +3746,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
 
     /* ----- onglet 3 : Rez-de-chaussée ----- */
 
-    groupBox gb7 "Rez-de-chaussée" pos:[10,160] width:410 height:240
+    groupBox gb7 "Rez-de-chaussée" pos:[10,160] width:410 height:252
     dropdownList ddGround "Type du rez-de-chaussée :" pos:[25,182] width:380 items:#("Vitrine","Porte + vitrage","Alternance vitrine / porte","Panneaux pleins","Travée vide (passage)","Arcades en arc","Portique à colonnes (type Perret)","Maison de ville (porte + fenêtres)") selection:1 tooltip:"Composition du rez-de-chaussée."
     dropdownList ddArc "Forme des arcades :" pos:[25,232] width:380 items:#("Plein cintre","Arc surbaissé","Linteau droit (portique)") selection:1 tooltip:"Forme des ouvertures des arcades (type Perret, Le Havre)."
     label l_spArcR "Retrait de la vitrine :" pos:[25,286] width:185 height:16
@@ -3726,10 +3756,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
     checkbox cbArcGl "Vitrines en arc (suivent l'arche)" pos:[25,342] checked:true tooltip:"Coché : le vitrage de la galerie suit la forme de l'arche. Décoché : vitrines rectangulaires."
     label l_spDoorH "Hauteur des portes :" pos:[25,368] width:185 height:16
     spinner spDoorH "" pos:[215,366] width:190 range:[2,6,3] type:#float scale:0.05 tooltip:"Hauteur commune de toutes les portes du rez-de-chaussée (seule la largeur varie). 2,05 m minimum pour une maison de ville, 3,00 m pour un magasin ou un grand immeuble."
-    groupBox gb9 "Travée d'entrée" pos:[10,408] width:410 height:106
-    dropdownList ddEntrance "Position de l'entrée :" pos:[25,396] width:380 items:#("Aucune","Centre","Gauche","Droite","Aléatoire") selection:2 tooltip:"Position de la travée d'entrée : plus large, avec porte, vitrages, imposte et auvent."
-    label l_spEntW "Largeur de l'entrée (facteur) :" pos:[25,450] width:185 height:16
-    spinner spEntW "" pos:[215,448] width:190 range:[1,3,1.6] type:#float scale:0.1 tooltip:"Largeur de la travée d'entrée par rapport aux autres."
+    label l_spDoorN "Nombre de portes (alternance) :" pos:[25,394] width:185 height:16
+    spinner spDoorN "" pos:[215,392] width:190 range:[0,20,0] type:#integer scale:1 tooltip:"Pour le type « Alternance vitrine / porte » : nombre de PORTES parmi les travées, réparties régulièrement (vitrines entre les portes). 0 = automatique : une porte sur deux. Exemple : 6 travées, 2 portes = V V P V V P."
+    groupBox gb9 "Travée d'entrée" pos:[10,436] width:410 height:106
+    dropdownList ddEntrance "Position de l'entrée :" pos:[25,424] width:380 items:#("Aucune","Centre","Gauche","Droite","Aléatoire") selection:2 tooltip:"Position de la travée d'entrée : plus large, avec porte, vitrages, imposte et auvent."
+    label l_spEntW "Largeur de l'entrée (facteur) :" pos:[25,478] width:185 height:16
+    spinner spEntW "" pos:[215,476] width:190 range:[1,3,1.6] type:#float scale:0.1 tooltip:"Largeur de la travée d'entrée par rapport aux autres."
 
     /* ----- onglet 4 : Fenêtres (garde-corps, volets, casquettes) ----- */
 
@@ -3927,6 +3959,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
         spEntW.visible = t3
         l_spDoorH.visible = t3
         spDoorH.visible = t3
+        l_spDoorN.visible = t3
+        spDoorN.visible = t3
 
         gb10.visible = t4
         ddRail.visible = t4
@@ -4093,6 +4127,11 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
         spArcL.enabled = gal
         l_spArcR.enabled = gal
         l_spArcL.enabled = gal
+
+        -- le nombre de portes ne sert qu'au mode « Alternance vitrine / porte »
+        local alt = (g == "Alternating storefront / door")
+        spDoorN.enabled = alt
+        l_spDoorN.enabled = alt
     )
 
     -- la pente ne sert qu'aux toits à pentes, l'acrotère qu'à la terrasse
@@ -4170,6 +4209,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
         PR.entrance = FR_EntCodes[ddEntrance.selection]
         PR.entranceFactor = spEntW.value
         PR.doorH = spDoorH.value
+        PR.nDoors = spDoorN.value
         PR.cornice = cbCornice.checked
 
         PR.colWall = cpWall.color
@@ -4242,6 +4282,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
         cbWall.checked = PR.allowWall
         spEntW.value = PR.entranceFactor
         spDoorH.value = PR.doorH
+        spDoorN.value = PR.nDoors
         cbCornice.checked = PR.cornice
 
         cpWall.color = PR.colWall
@@ -4665,8 +4706,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.11 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.11")
+                "FRAMER | Générateur de façades 0.6.12 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.12")
         )
         catch()
 
@@ -5164,6 +5205,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
                     PRk.entrance = PR1.entrance
                     PRk.entranceFactor = PR1.entranceFactor
                     PRk.doorH = PR1.doorH
+                    PRk.nDoors = PR1.nDoors
                     PRk.seedVal = PR1.seedVal + k - 1
                     PRk.variation = PR1.variation
                     PRk.widthVar = PR1.widthVar
@@ -5379,6 +5421,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
     on spWidthVar entered do FR_LiveTick()
     on spEntW buttonup do FR_LiveTick()
     on spEntW entered do FR_LiveTick()
+    on spDoorN buttonup do FR_LiveTick()
+    on spDoorN entered do FR_LiveTick()
     on spDoorH buttonup do FR_LiveTick()
     on spDoorH entered do FR_LiveTick()
     on spRailH buttonup do FR_LiveTick()
