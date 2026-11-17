@@ -512,9 +512,12 @@ rollout FR_TESTBAC "TEST BAC (acrotere seul)"
     (
         ClearAll()
 
+        -- NOTE : addSpline (avec tableau de points) n'existe pas en 2026 ->
+        -- addNewSpline + addKnot, la forme canonique
         local sp = splineShape pos:[0,0,0]
-        addSpline sp #([0,0,0],[20,0,0],[20,10,0],[0,10,0])
-        close sp 1
+        local si = addNewSpline sp
+        for p in #([0,0,0],[20,0,0],[20,10,0],[0,10,0]) do addKnot sp si #corner #line p
+        close sp si
         update sp
 
         contourNode = sp
