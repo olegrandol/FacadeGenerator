@@ -301,8 +301,9 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
                 modPanel.addModToSelection (Edit_Poly()) ui:on
                 local ep = o.modifiers[#Edit_Poly]
 
-                ep.SetSelection #Face #{}
-                ep.Select #Face (topF as bitArray)
+                -- SetSelection (et NON Select : Select = enregistrement de clic
+                -- interactif, sans effet en scripte)
+                ep.SetSelection #Face (topF as bitArray)
                 ep.SetOperation #Inset
                 ep.insetAmount = spInset.value
                 ep.Commit ()
@@ -340,8 +341,7 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
                     modPanel.addModToSelection (Edit_Poly()) ui:on
                     ep = o.modifiers[#Edit_Poly]
 
-                    ep.SetSelection #Face #{}
-                    ep.Select #Face (midF as bitArray)
+                    ep.SetSelection #Face (midF as bitArray)
                     ep.SetOperation #ExtrudeFace
                     ep.extrudeFaceHeight = spExtr.value
                     ep.Commit ()
