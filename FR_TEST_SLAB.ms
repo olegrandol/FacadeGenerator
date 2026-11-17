@@ -191,12 +191,18 @@ fn T_MesureFond o c0 =
 
     for f = 1 to nf do
     (
-        local c = polyop.getFaceCenter o f
-        local d = sqrt ((c.x - c0.x)^2 + (c.y - c0.y)^2)
-        if d < bestD do
+        -- UNIQUEMENT les faces orientées vers le HAUT : le dessous de la
+        -- dalle a le même centre XY que le fond du bac mais normale -Z,
+        -- et le confondre faisait croire à un échec -> double extrusion
+        if (polyop.getFaceNormal o f).z > 0.9 do
         (
-            bestD = d
-            best = f
+            local c = polyop.getFaceCenter o f
+            local d = sqrt ((c.x - c0.x)^2 + (c.y - c0.y)^2)
+            if d < bestD do
+            (
+                bestD = d
+                best = f
+            )
         )
     )
 
