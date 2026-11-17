@@ -345,21 +345,14 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
                     messageBox "Faces du milieu introuvables après inset."
                 else
                 (
-                    -- Edit_Poly n°2 : extrusion négative du fond (manip manuelle)
-                    max modify mode
-                    modPanel.addModToSelection (Edit_Poly()) ui:on
-                    ep = o.modifiers[#Edit_Poly]
-                    modPanel.setCurrentObject ep
-                    subobjectLevel = 4
+                    -- extrusion négative du fond : polyop direct sur le poly
+                    -- de base (pas de modificateur, s'applique immédiatement)
+                    local zAv = (polyop.getFaceCenter o midF[1]).z
+                    polyop.extrudeFaces o (midF as bitArray) spExtr.value
+                    local zAp = (polyop.getFaceCenter o midF[1]).z
 
-                    ep.SetSelection #Face (midF as bitArray)
-                    format "T-BAC2: selection extrude=%\n" ((ep.GetSelection #Face) as string)
-                    ep.SetOperation #ExtrudeFace
-                    ep.extrudeFaceType = 0
-                    ep.extrudeFaceHeight = spExtr.value
-                    ep.Commit ()
-
-                    format "T-BAC2: extrusion % commitée — BAC TERMINE\n" spExtr.value
+                    format "T-BAC2: extrusion % — z fond avant=% apres=% (delta=%)\n" spExtr.value zAv zAp (zAp - zAv)
+                    format "T-BAC2: BAC TERMINE\n"
 
                     messageBox "Bac construit (manip native Max) :\noutline + extrude + inset + extrude négatif.\nListener (F11) : lignes T-BAC2."
                 )
