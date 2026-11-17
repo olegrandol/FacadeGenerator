@@ -320,6 +320,10 @@ fn T_Triangulate pts =
 
 -- ----------------------------------------------------------------------------
 -- LE BAC — copie exacte de FR_RoofBac + traces détaillées
+-- DIAGNOSTIC COULEUR : chaque groupe de faces a sa propre matériau/couleur :
+--   paroi extérieure = ROUGE, couronne (dessus acrotère) = VERT,
+--   paroi intérieure de la gorge = BLEU, fond de gorge = JAUNE,
+--   dessous = VIOLET. Une zone NOIRE = faces de ce groupe mal orientées.
 -- ----------------------------------------------------------------------------
 fn T_RoofBac O I z0 pT gorge mat =
 (
@@ -343,7 +347,13 @@ fn T_RoofBac O I z0 pT gorge mat =
             format "T-BAC: O[%]=% I[%]=%\n" k O[k] k I[k]
 
         local vArr = #()
-        local fArr = #()
+
+        -- matériaux par groupe (diagnostic couleur)
+        local mExt   = standardMaterial name:"TEST_paroi_ext"  diffuse:(color 200 60 60)
+        local mCrown = standardMaterial name:"TEST_couronne"   diffuse:(color 60 200 60)
+        local mInt   = standardMaterial name:"TEST_paroi_int"  diffuse:(color 60 60 200)
+        local mFlr   = standardMaterial name:"TEST_fond_gorge" diffuse:(color 230 230 60)
+        local mBot   = standardMaterial name:"TEST_dessous"    diffuse:(color 150 60 200)
 
         for k = 1 to n do
         (
@@ -356,19 +366,24 @@ fn T_RoofBac O I z0 pT gorge mat =
         local totA = abs (T_PolyArea O)
         local nGorge = 0
 
+        -- groupes : 1..2n = paroi ext (rouge), 2n+1..4n = couronne (vert),
+        -- 4n+1..6n = paroi int (bleu), puis fond (jaune), dessous (violet)
+        local fExt = #(), fCrown = #(), fInt = #()
+        local fFlr = #(), fBot = #()
+
         for k = 1 to n do
         (
             local k2 = k + 1
             if k2 > n do k2 = 1
 
-            append fArr [k, k2, k2+n]
-            append fArr [k, k2+n, k+n]
+            append fExt [k, k2, k2+n]
+            append fExt [k, k2+n, k+n]
 
-            append fArr [k+n, k2+n, k2+2*n]
-            append fArr [k+n, k2+2*n, k+2*n]
+            append fCrown [k+n, k2+n, k2+2*n]
+            append fCrown [k+n, k2+2*n, k+2*n]
 
-            append fArr [k+2*n, k2+3*n, k+3*n]
-            append fArr [k+2*n, k2+2*n, k2+3*n]
+            append fInt [k+2*n, k2+3*n, k+3*n]
+            append fInt [k+2*n, k2+2*n, k2+3*n]
         )
 
         local tris = T_Triangulate I
@@ -385,7 +400,7 @@ fn T_RoofBac O I z0 pT gorge mat =
 
             if totA <= 0.0 or tA <= totA * 1.01 then
             (
-                append fArr [3*n+a, 3*n+b, 3*n+c]
+                append fFlr [3*n+a, 3*n+b, 3*n+c]
                 nGorge = nGorge + 1
             )
             else
@@ -394,8 +409,9 @@ fn T_RoofBac O I z0 pT gorge mat =
 
         format "T-BAC: faces fond de gorge retenues: %\n" nGorge
 
-        local tris2 = T_Triangulate O
         local nDess = 0
+
+        local tris2 = T_Triangulate O
 
         for t in tris2 do
         (
@@ -407,7 +423,7 @@ fn T_RoofBac O I z0 pT gorge mat =
 
             if totA <= 0.0 or tA <= totA * 1.01 then
             (
-                append fArr [a, c, b]
+                append fBot [a, c, b]
                 nDess = nDess + 1
             )
             else
@@ -416,23 +432,45 @@ fn T_RoofBac O I z0 pT gorge mat =
 
         format "T-BAC: faces dessous retenues: %\n" nDess
 
-        format "T-BAC: TOTAL vertices=% faces=%\n" vArr.count fArr.count
+        -- 5 meshes séparés (un par groupe coloré) pour un diagnostic sans ambiguïté
+        local res = #()
 
-        local m = mesh vertices:vArr faces:fArr
+        local mshE = mesh name:"TEST_paroi_ext"   vertices:vArr faces:fExt   material:mExt
+        local mshC = mesh name:"TEST_couronne"    vertices:vArr faces:fCrown material:mCrown
+        local mshI = mesh name:"TEST_paroi_int"   vertices:vArr faces:fInt   material:mInt
 
-        update m
+        update mshE
+        update mshC
+        update mshI
 
-        if (classof m) == Editable_mesh do convertToPoly m
-        if (classof m) == Editable_Poly do polyop.setFaceSmoothGroup m #{1..(polyop.getNumFaces m)} 0
+        append res mshE
+        append res mshC
+        append res mshI
 
-        m.name = "TEST_Bac"
-        m.material = mat
+        if fFlr.count > 0 do
+        (
+            local mshF = mesh name:"TEST_fond_gorge" vertices:vArr faces:fFlr material:mFlr
+            update mshF
+            append res mshF
+        )
 
-        append FR_TESTBAC_Pool m
+        if fBot.count > 0 do
+        (
+            local mshB = mesh name:"TEST_dessous" vertices:vArr faces:fBot material:mBot
+            update mshB
+            append res mshB
+        )
 
-        format "T-BAC: mesh cree OK\n"
+        for m in res do
+        (
+            if (classof m) == Editable_mesh do convertToPoly m
+            if (classof m) == Editable_Poly do polyop.setFaceSmoothGroup m #{1..(polyop.getNumFaces m)} 0
+            append FR_TESTBAC_Pool m
+        )
 
-        m
+        format "T-BAC: mesh cree OK (% objets groupes)\n" res.count
+
+        res[1]
     )
 )
 
@@ -460,11 +498,11 @@ rollout FR_TESTBAC "TEST BAC (acrotere seul)"
         FR_TESTBAC_Pool = #()
     )
 
-    fn MarkerPts pts col nm =
+    fn MarkerPts pts col nm zbase =
     (
         for k = 1 to pts.count do
         (
-            local s = sphere radius:0.08 pos:pts[k] wirecolor:col
+            local s = sphere radius:0.08 pos:[pts[k].x, pts[k].y, zbase] wirecolor:col
             s.name = nm + "_" + (k as string)
             append FR_TESTBAC_Pool s
         )
@@ -518,14 +556,14 @@ rollout FR_TESTBAC "TEST BAC (acrotere seul)"
 
             local bac = T_RoofBac O I spZ.value spPar.value spGorge.value mat
 
-            -- temoins visuels : bleus = O (exterieur), rouges = I (interieur)
-            MarkerPts O (color 40 80 255) "TEST_O"
-            MarkerPts I (color 255 40 40) "TEST_I"
+            -- temoins visuels AU NIVEAU DU BAC : cyan = O (exterieur), magenta = I (interieur)
+            MarkerPts O (color 0 200 255) "TEST_O" spZ.value
+            MarkerPts I (color 255 0 200) "TEST_I" spZ.value
 
             if bac == undefined then
                 messageBox "BAC ANNULE — regardez les lignes T-BAC dans le Listener (F11)."
             else
-                messageBox ("BAC construit : " + (O.count as string) + " sommets O / " + (I.count as string) + " sommets I.\nSpheres bleues = O, rouges = I.\nDetail complet dans le Listener (F11).")
+                messageBox ("BAC construit : " + (O.count as string) + " sommets O / " + (I.count as string) + " sommets I.\nCyan = O, magenta = I.\nCouleurs : paroi ext ROUGE, couronne VERT,\nparoi int BLEU, fond de gorge JAUNE, dessous VIOLET.\nUne zone NOIRE = groupe mal oriente.\nDetail dans le Listener (F11).")
         )
     )
 
