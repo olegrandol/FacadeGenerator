@@ -28,6 +28,17 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.22
+
+- **Fente au faîtage / aux arêtes (toits en pente du mode contour)** : chaque
+  versant étant un prisme extrudé selon sa propre normale, il restait une
+  V-groove ouverte au faîtage (2 pans) et aux arêtes de croupe (4 pans). Le
+  couvre-faîtage (`FR_RidgeCap`) est désormais **toujours posé** en mode
+  contour : faîtage pour le 2 pans, faîtage raccourci + 4 croupes pour le
+  4 pans. Profil Tri, ou Round si le couvre-joint est réglé sur Round.
+- **Sous-face** : le fond fermé du toit est **double face** — avant, vu de
+  dessus à travers la fente, il était culled et on voyait l'intérieur.
+
 ## Version 0.6.21
 
 - **Diagnostics toujours visibles** : `FR_Msg` était masqué en mode live

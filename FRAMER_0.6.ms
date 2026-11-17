@@ -1,7 +1,19 @@
 /*
-    FRAMER 0.6.21
+    FRAMER 0.6.22
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    CORRIGÉ EN 0.6.22 :
+    - FENTE AU FAÎTAGE / AUX ARÊTES (toits en pente du mode contour) : chaque
+      versant est un prisme extrudé selon sa propre normale — il restait une
+      V-groove ouverte au faîtage (2 pans) et aux arêtes de croupe (4 pans).
+      Le couvre-faîtage (FR_RidgeCap, l'idée « ligne aux jointures ») est
+      désormais TOUJOURS posé en mode contour : faîtage pour le 2 pans,
+      faîtage raccourci + 4 croupes pour le 4 pans. Profil Tri, ou Round si
+      le couvre-joint est réglé sur Round.
+    - SOUS-FACE : le fond fermé du toit (FR_RoofCapContour) est DOUBLE FACE —
+      avant, vu de dessus à travers la fente, il était culled et on voyait
+      l'intérieur du bâtiment.
 
     CORRIGÉ EN 0.6.21 :
     - DIAGNOSTICS TOUJOURS VISIBLES : FR_Msg était masqué en mode live
@@ -2778,7 +2790,14 @@ fn FR_RoofCapContour p pts z mat =
 
             local tA = abs ((pts[b].x - pts[a].x) * (pts[c].y - pts[a].y) - (pts[c].x - pts[a].x) * (pts[b].y - pts[a].y)) / 2.0
 
-            if totA <= 0.0 or tA <= totA * 1.01 do append fArr [a, c, b]
+            if totA <= 0.0 or tA <= totA * 1.01 do
+            (
+                append fArr [a, c, b]
+                -- 0.6.22 : DOUBLE FACE — vue de dessus (à travers une fente de
+                -- faîtage) la face unique vers le bas était culled et on voyait
+                -- l'intérieur du bâtiment
+                append fArr [a, b, c]
+            )
         )
 
         local m = mesh vertices:vArr faces:fArr
@@ -3013,6 +3032,43 @@ fn FR_RoofContour pts segPRs bases totalH =
 
         -- versants suivant le contour décalé
         FR_RoofSlopesContour "FRAMER_Roof" oPts ex inw p1 uMin uMax wMin wMax PR0.roofPitch (PR0.roofMode == "Hip") roofMat totalH
+
+        -- 0.6.22 : couvre-faîtage + couvre-croupes — BOUCHE la fente entre
+        -- versants (chaque prisme est extrudé selon sa propre normale, d'où une
+        -- V-groove au faîtage et aux arêtes de croupe). Toujours posé en mode
+        -- contour : profil Tri, ou Round si le couvre-joint est réglé sur Round.
+        local hC = ((wMax - wMin)/2.0) * (tan PR0.roofPitch)
+
+        if hC > 0.05 do
+        (
+            local wmC = (wMin + wMax)/2.0
+            local rwC = PR0.ridgeW
+            local rhC = PR0.ridgeH
+            local sC = (rwC/2.0) * (tan PR0.roofPitch)
+            local rndC = (PR0.ridgeMode == "Round")
+
+            if PR0.roofMode == "Gable" then
+            (
+                FR_RidgeCap "FRAMER_Roof_Faitage" \
+                    (p1 + ex*uMin + inw*wmC + [0,0,totalH+hC]) \
+                    (p1 + ex*uMax + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
+            )
+            else
+            (
+                -- faîtage raccourci + 4 arêtes de croupe (comme la façade simple)
+                local uR1 = uMin + (wmC - wMin)
+                local uR2 = uMax - (wmC - wMin)
+
+                FR_RidgeCap "FRAMER_Roof_Faitage" \
+                    (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC]) \
+                    (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
+
+                FR_RidgeCap "FRAMER_Roof_HipFL" (p1 + ex*uMin + inw*wMin + [0,0,totalH]) (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
+                FR_RidgeCap "FRAMER_Roof_HipFR" (p1 + ex*uMax + inw*wMin + [0,0,totalH]) (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
+                FR_RidgeCap "FRAMER_Roof_HipBL" (p1 + ex*uMin + inw*wMax + [0,0,totalH]) (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
+                FR_RidgeCap "FRAMER_Roof_HipBR" (p1 + ex*uMax + inw*wMax + [0,0,totalH]) (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
+            )
+        )
 
         -- 0.6.20 : pignons maçonnés du 2 pans (triangles aux extrémités du faîtage,
         -- comme en façade simple — le débord reste en porte-à-faux au-dessus)
@@ -4633,7 +4689,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.21" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.22" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -5778,8 +5834,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.21" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.21 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.21")
+                "FRAMER | Générateur de façades 0.6.22 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.22")
         )
         catch()
 
