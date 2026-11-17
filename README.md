@@ -28,6 +28,32 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.26
+
+- **Normales des pans corrigées (la cause des « faces noires »)** : dans
+  `FR_Prisma` (la brique de base de tous les versants, bandes et pignons), la
+  face de DESSUS suivait le même cycle de sommets que la face de DESSOUS —
+  normale vers le bas pour les deux. Le dessus de tous les prismes était
+  inversé depuis l'origine : les pans de toit, les bandes brisis/terrasson du
+  mansard et les pignons apparaissaient noirs / vus de l'intérieur. Winding
+  corrigé dans `FR_Prisma` et aux extrémités de `FR_RidgeCap`.
+- **Jonctions entre pans « bouchées »** (l'idée validée ensemble) : chaque pan
+  étant extrudé selon sa propre normale, il restait au faîtage et aux arêtiers
+  une fente en V ouverte que le couvre-joint ne couvrait pas. Nouveau
+  `FR_RidgeFill` : un prisme triangulaire exact (section = le V : arête basse
+  sur la jonction, sommets aux arêtes hautes des deux pans) remplit la fente ;
+  le couvre-joint décoratif est reposé SUR le méplat qui en résulte. Faîtage
+  du 2 pans, faîtage raccourci + 4 arêtiers du 4 pans (mode contour).
+- **Forme en L en 2 et 4 pans** : la ligne de faîtage d'un contour concave
+  produit des cellules concaves (et, sur certains contours, plusieurs morceaux
+  séparés). `FR_SplitGE` découpe désormais en plusieurs boucles connexes
+  (`FR_SplitAll`) et chaque cellule est triangulée par découpe d'oreilles
+  (`FR_Triangulate`) au lieu de l'éventail depuis le sommet 1, qui déchirait
+  les cellules en L. Validé en simulation sur les deux orientations du L.
+- **Bow simple (rectangulaire)** : les flancs de l'oriel n'étaient pas
+  construits (seuls les poteaux d'angle) — on voyait à travers les côtés.
+  Deux panneaux vitrés ferment les flancs, du plan avant au plan de façade.
+
 ## Version 0.6.25
 
 - **Bac d'acrotère par manip native (mode contour)** : le bac de terrasse est

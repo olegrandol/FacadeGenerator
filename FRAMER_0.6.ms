@@ -1,7 +1,32 @@
 /*
-    FRAMER 0.6.25
+    FRAMER 0.6.26
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    CORRIGÉ EN 0.6.26 (toits du mode contour) :
+    - NORMALES DES PANS INVERSÉES (la cause des « faces noires » sur les toits) :
+      dans FR_Prisma, la face de DESSUS suivait le même cycle de sommets que la
+      face de DESSOUS — normale vers le BAS pour les deux. Le dessus de TOUS les
+      prismes était inversé depuis l'origine : pans de toit, bandes brisis/
+      terrasson du mansard et pignons apparaissaient noirs / vus de l'intérieur.
+      Winding corrigé (FR_Prisma + extrémités de FR_RidgeCap).
+    - JONCTIONS ENTRE PANS « BOUCHÉES » (l'idée validée) : chaque pan étant
+      extrudé selon sa propre normale, il restait une fente en V ouverte au
+      faîtage et aux arêtiers que le couvre-joint ne couvrait pas. Nouveau
+      FR_RidgeFill : un prisme triangulaire EXACT (section = le V : arête basse
+      sur la jonction, sommets aux arêtes hautes des deux pans) remplit la
+      fente ; le couvre-joint décoratif est reposé SUR le méplat qui en
+      résulte. Faîtage + 4 arêtiers du 4 pans.
+    - FORME EN L EN 2 ET 4 PANS : la ligne de faîtage traverse plusieurs fois
+      un contour concave — l'ancienne découpe fusionnait les morceaux en un
+      seul polygone « en 8 » d'où versants en vrille. FR_SplitGE découpe
+      désormais en PLUSIEURS boucles connexes (FR_SplitAll pour les listes), et
+      chaque cellule est triangulée par découpe d'oreilles (FR_Triangulate)
+      au lieu de l'éventail depuis le sommet 1 (faux sur les cellules
+      concaves).
+    - BOW SIMPLE (rectangulaire) : les FLANCS de l'oriel n'étaient pas
+      construits (seuls les poteaux d'angle) — on voyait à travers les côtés.
+      Deux panneaux vitrés ferment les flancs, du plan avant au plan de façade.
 
     NOUVEAU EN 0.6.25 :
     - BAC D'ACROTÈRE PAR MANIP NATIVE (mode contour) : le bac de terrasse est
@@ -1419,6 +1444,13 @@ fn FR_BowWindow p bu1 bu2 z1 z2 T depth bd fw basis wallMat frameMat glassMat si
 
         FR_LocalBox (p+"_PostL") 0.0 FR_VC ((cz1+cz2)/2) (fw*1.6) (T*0.8) (cz2-cz1) bF frameMat
         FR_LocalBox (p+"_PostR") bw FR_VC ((cz1+cz2)/2) (fw*1.6) (T*0.8) (cz2-cz1) bF frameMat
+
+        -- 0.6.26 : FLANCS VITRÉS — avant, seuls les poteaux d'angle fermaient
+        -- les extrémités : on voyait à travers les côtés de l'oriel
+        -- rectangulaire. Deux panneaux de verre du plan avant (v=0) au plan de
+        -- façade (v=run), comme les joues vitrées du bow à 45°.
+        FR_LocalBox (p+"_SideL") 0.0 (run/2.0) ((cz1+cz2)/2) 0.04 run (cz2-cz1) bF glassMat
+        FR_LocalBox (p+"_SideR") bw (run/2.0) ((cz1+cz2)/2) 0.04 run (cz2-cz1) bF glassMat
     )
     else
     (
@@ -1769,7 +1801,10 @@ fn FR_Pt basis u v z =
 
 -- prisme épais posé sur des points (3 ou 4) ordonnés anti-horaire vus depuis l'extérieur :
 -- extrudé de "th" le long de sa normale
-fn FR_Prisma p pts mat th =
+-- 0.6.26 : kwarg tris — triangulation EXTERNE (liste de triplets d'indices)
+-- pour les polygones CONCAVES : l'éventail depuis le sommet 1 déchire les
+-- cellules en L. Le caller triangule (FR_Triangulate) dans son plan 2D.
+fn FR_Prisma p pts mat th tris:undefined =
 (
     local n = pts.count
     local nrm = undefined
@@ -1790,11 +1825,28 @@ fn FR_Prisma p pts mat th =
 
         for k = 1 to n do append vArr (pts[k] + nrm*th)
 
-        -- dessous (normale inverse)
-        for k = 1 to n-2 do append fArr [1, k+2, k+1]
+        -- dessous (normale vers le bas) — triangulation fournie sinon éventail
+        if tris != undefined and tris.count > 0 then
+        (
+            for t in tris do append fArr [t[1], t[3], t[2]]
+        )
+        else
+        (
+            for k = 1 to n-2 do append fArr [1, k+2, k+1]
+        )
 
-        -- dessus
-        for k = 1 to n-2 do append fArr [n+1, n+k+2, n+k+1]
+        -- dessus — 0.6.26 : WINDING CORRIGÉ. L'ancien ordre [n+1, n+k+2, n+k+1]
+        -- suit le MÊME cycle que le dessous [1, k+2, k+1] : normale vers le BAS
+        -- pour les deux — le dessus de TOUS les prismes était inversé (pans de
+        -- toit, bandes de mansard et pignons noirs / vus de l'intérieur).
+        if tris != undefined and tris.count > 0 then
+        (
+            for t in tris do append fArr [n+t[1], n+t[2], n+t[3]]
+        )
+        else
+        (
+            for k = 1 to n-2 do append fArr [n+1, n+k+1, n+k+2]
+        )
 
         -- côtés
         for k = 1 to n do
@@ -1907,9 +1959,10 @@ fn FR_RidgeCap p A B w h s rnd mat =
         for k = 1 to n do append vArr (A + ey*prof[k].x + ez*prof[k].y)
         for k = 1 to n do append vArr (B + ey*prof[k].x + ez*prof[k].y)
 
-        -- extrémités (éventails)
+        -- extrémités (éventails) — 0.6.26 : winding du dessus corrigé
+        -- (même bug que FR_Prisma : normale vers l'arrière au lieu de +ex)
         for k = 1 to n-2 do append fArr [1, k+2, k+1]
-        for k = 1 to n-2 do append fArr [n+1, n+k+2, n+k+1]
+        for k = 1 to n-2 do append fArr [n+1, n+k+1, n+k+2]
 
         -- côtés
         for k = 1 to n do
@@ -1931,6 +1984,42 @@ fn FR_RidgeCap p A B w h s rnd mat =
         append FR_Pool m
 
         m
+    )
+)
+
+-- 0.6.26 : BOURREMENT DE JONCTION entre deux versants (l'idée « boucher »).
+-- Chaque prisme de versant est extrudé selon sa propre normale : au faîtage et
+-- aux arêtiers, les deux faces latérales s'écartent en V ouvert — une fente
+-- restait visible malgré le couvre-joint. Ce prisme triangulaire exact
+-- (section = le V : arête basse sur la jonction, deux sommets aux arêtes
+-- hautes des versants) remplit la fente ; le couvre-joint décoratif se pose
+-- ensuite PAR-DESSUS (sur le méplat qui résulte du bourrage).
+-- A/B : extrémités MONDE de la ligne de jonction ; n1/n2 : normales unitaires
+-- des deux versants ; th : épaisseur des versants (la même) ; mat : matériau.
+fn FR_RidgeFill p A B n1 n2 th mat =
+(
+    local d = B - A
+    local len = length d
+
+    -- 0.6.26 : trace Listener (diagnostic)
+    if len <= 0.05 do
+        format "FR_BOURRE-JOINT ANNULE (%): len=%\n" p len
+
+    if len > 0.05 do
+    (
+        -- FR_Prisma extrude selon cross(v2-v1, v3-v1) : cross(n1,n2) est
+        -- parallèle à la jonction — on ordonne les deux sommets hauts pour
+        -- extruder de A vers B.
+        local m1 = n1
+        local m2 = n2
+
+        if (dot (cross n1 n2) d) < 0.0 do
+        (
+            m1 = n2
+            m2 = n1
+        )
+
+        FR_Prisma p #(A, A + th*m1, A + th*m2) mat len
     )
 )
 
@@ -2980,39 +3069,96 @@ fn FR_SplitGE pts nx ny c =
     local res = #()
     local n = pts.count
 
-    for k = 1 to n do
+    -- 0.6.26 : DÉCOUPE MULTI-BOUCLES. Sur un contour concave (forme en L), la
+    -- ligne de coupe traverse le polygone PLUSIEURS fois : l'ancien code
+    -- concaténait tous les morceaux en UN SEUL polygone en forme de 8, et la
+    -- triangulation produisait des versants en vrille. Désormais chaque morceau
+    -- connexe devient sa propre boucle (la marche referme la boucle à chaque
+    -- sortie du demi-plan conservé).
+    if n >= 3 do
     (
-        local a = pts[k]
+        -- démarre la marche sur un sommet DEHORS du demi-plan conservé
+        -- (sinon la boucle qui entoure le sommet 1 ne serait jamais refermée)
+        local rot = 0
 
-        local k2 = k + 1
-        if k2 > n do k2 = 1
-
-        local b = pts[k2]
-
-        local fa = nx*a.x + ny*a.y + c
-        local fb = nx*b.x + ny*b.y + c
-
-        if fa >= 0.0 then
+        for k = 1 to n do
         (
-            append res a
+            local q = pts[k]
 
-            if fb < 0.0 do append res (a + (b - a) * (fa / (fa - fb)))
+            if rot == 0 and (nx*q.x + ny*q.y + c) < 0.0 do rot = k
         )
-        else if fb >= 0.0 do
-            append res (a + (b - a) * (fa / (fa - fb)))
+
+        local cur = #()
+
+        for i = 1 to n do
+        (
+            local k = i + rot
+            if k > n do k = k - n
+
+            local a = pts[k]
+
+            local k2 = k + 1
+            if k2 > n do k2 = 1
+
+            local b = pts[k2]
+
+            local fa = nx*a.x + ny*a.y + c
+            local fb = nx*b.x + ny*b.y + c
+
+            if fa >= 0.0 then
+            (
+                append cur a
+
+                if fb < 0.0 do
+                (
+                    append cur (a + (b - a) * (fa / (fa - fb)))
+
+                    -- sortie du demi-plan : on referme la boucle
+                    if cur.count >= 3 do append res cur
+                    cur = #()
+                )
+            )
+            else if fb >= 0.0 do
+                cur = #((a + (b - a) * (fa / (fa - fb))))
+        )
+
+        if cur.count >= 3 do append res cur
+
+        -- supprime les sommets confondus introduits par la coupe, boucle par boucle
+        local clean = #()
+
+        for lp in res do
+        (
+            local cl = #()
+
+            for q in lp do
+            (
+                if cl.count == 0 or (length (q - cl[cl.count])) > 0.0001 do append cl q
+            )
+
+            if cl.count > 1 and (length (cl[1] - cl[cl.count])) <= 0.0001 do deleteItem cl cl.count
+
+            if cl.count >= 3 do append clean cl
+        )
+
+        res = clean
     )
 
-    -- supprime les sommets confondus introduits par la coupe
-    local clean = #()
+    res
+)
 
-    for q in res do
+-- 0.6.26 : coupe d'une LISTE de boucles (résultat et entrée de FR_SplitGE)
+-- — concatène les morceaux de chaque boucle.
+fn FR_SplitAll loops nx ny c =
+(
+    local out = #()
+
+    for lp in loops do
     (
-        if clean.count == 0 or (length (q - clean[clean.count])) > 0.0001 do append clean q
+        for q in (FR_SplitGE lp nx ny c) do append out q
     )
 
-    if clean.count > 1 and (length (clean[1] - clean[clean.count])) <= 0.0001 do deleteItem clean clean.count
-
-    clean
+    out
 )
 
 -- versants d'un toit suivant le contour décalé : faîtage sur le plus long segment (direction ex),
@@ -3036,25 +3182,27 @@ fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat z0 =
         -- coordonnées (u, w) du contour décalé dans le repère du faîtage
         local uv = for q in pts collect [dot (q - p1) ex, dot (q - p1) inw, 0.0]
 
-        -- cellules : #(polygone (u,w), axe (1=u, 2=w), référence, signe) -> z = signe*(coord-ref)*tanP
+        -- cellules : #(LISTE de polygones (u,w), axe (1=u, 2=w), référence, signe)
+        -- -> z = signe*(coord-ref)*tanP
+        -- 0.6.26 : chaque découpe renvoie une LISTE de boucles (contours concaves)
         local cells = #()
 
-        local lo = FR_SplitGE uv 0.0 -1.0 wm
-        local hi = FR_SplitGE uv 0.0 1.0 -wm
+        local lo = FR_SplitAll #(uv) 0.0 -1.0 wm
+        local hi = FR_SplitAll #(uv) 0.0 1.0 -wm
 
         if hip then
         (
             -- côté w <= wm : découpé par les diagonales issues des extrémités du faîtage
-            local a1 = FR_SplitGE lo -1.0 1.0 (uMin - wMin)
-            local rest1 = FR_SplitGE lo 1.0 -1.0 (wMin - uMin)
-            local a2 = FR_SplitGE rest1 1.0 1.0 -(uMax + wMin)
-            local mid1 = FR_SplitGE rest1 -1.0 -1.0 (uMax + wMin)
+            local a1 = FR_SplitAll lo -1.0 1.0 (uMin - wMin)
+            local rest1 = FR_SplitAll lo 1.0 -1.0 (wMin - uMin)
+            local a2 = FR_SplitAll rest1 1.0 1.0 -(uMax + wMin)
+            local mid1 = FR_SplitAll rest1 -1.0 -1.0 (uMax + wMin)
 
             -- côté w >= wm
-            local b1 = FR_SplitGE hi -1.0 -1.0 (uMin + wMax)
-            local rest2 = FR_SplitGE hi 1.0 1.0 -(uMin + wMax)
-            local b2 = FR_SplitGE rest2 1.0 -1.0 (wMax - uMax)
-            local mid2 = FR_SplitGE rest2 -1.0 1.0 (uMax - wMax)
+            local b1 = FR_SplitAll hi -1.0 -1.0 (uMin + wMax)
+            local rest2 = FR_SplitAll hi 1.0 1.0 -(uMin + wMax)
+            local b2 = FR_SplitAll rest2 1.0 -1.0 (wMax - uMax)
+            local mid2 = FR_SplitAll rest2 -1.0 1.0 (uMax - wMax)
 
             cells = #(#(a1, 1, uMin, 1), #(a2, 1, uMax, -1), #(mid1, 2, wMin, 1), #(b1, 1, uMin, 1), #(b2, 1, uMax, -1), #(mid2, 2, wMax, -1))
         )
@@ -3065,22 +3213,30 @@ fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat z0 =
 
         for c in cells do
         (
-            local poly = c[1]
-
-            if poly.count >= 3 do
+            for poly in c[1] do
             (
-                local wpts = #()
-
-                for q in poly do
+                if poly.count >= 3 do
                 (
-                    local coord = if c[2] == 1 then q.x else q.y
-                    local z = (c[4] * (coord - c[3])) * tanP
+                    -- 0.6.26 : orientation normalisée + VRAIE triangulation
+                    -- (découpe d'oreilles) — les cellules d'un contour concave
+                    -- (forme en L) sont concaves : l'éventail les déchirait.
+                    -- FR_Triangulate renvoie des indices dans la copie CCW.
+                    local cell = FR_PolyCCW poly
+                    local tris = FR_Triangulate cell
 
-                    append wpts (p1 + ex*q.x + inw*q.y + [0,0,z0 + z])
+                    local wpts = #()
+
+                    for q in cell do
+                    (
+                        local coord = if c[2] == 1 then q.x else q.y
+                        local z = (c[4] * (coord - c[3])) * tanP
+
+                        append wpts (p1 + ex*q.x + inw*q.y + [0,0,z0 + z])
+                    )
+
+                    FR_Prisma (p + "_Pente") wpts mat th tris:tris
+                    built = built + 1
                 )
-
-                FR_Prisma (p + "_Pente") wpts mat th
-                built = built + 1
             )
         )
 
@@ -3210,10 +3366,13 @@ fn FR_RoofContour pts segPRs bases totalH =
         -- versants suivant le contour décalé
         FR_RoofSlopesContour "FRAMER_Roof" oPts ex inw p1 uMin uMax wMin wMax PR0.roofPitch (PR0.roofMode == "Hip") roofMat totalH
 
-        -- 0.6.22 : couvre-faîtage + couvre-croupes — BOUCHE la fente entre
-        -- versants (chaque prisme est extrudé selon sa propre normale, d'où une
-        -- V-groove au faîtage et aux arêtes de croupe). Toujours posé en mode
-        -- contour : profil Tri, ou Round si le couvre-joint est réglé sur Round.
+        -- 0.6.26 : BOURRAGE DES JONCTIONS (l'idée « boucher ») — chaque pan est
+        -- extrudé selon sa propre normale : au faîtage et aux arêtiers, les deux
+        -- faces latérales s'écartent en V ouvert. Un prisme triangulaire exact
+        -- remplit chaque V ; le couvre-joint décoratif est ensuite reposé sur le
+        -- méplat qui en résulte (relevé de thR*cosP).
+        -- 0.6.22 : le couvre-faîtage/couvre-croupes reste posé (profil Tri, ou
+        -- Round si le couvre-joint est réglé sur Round).
         local hC = ((wMax - wMin)/2.0) * (tan PR0.roofPitch)
 
         if hC > 0.05 do
@@ -3224,11 +3383,30 @@ fn FR_RoofContour pts segPRs bases totalH =
             local sC = (rwC/2.0) * (tan PR0.roofPitch)
             local rndC = (PR0.ridgeMode == "Round")
 
+            -- épaisseur des pans (la même que dans FR_RoofSlopesContour)
+            local thR = 0.12
+            local sinP = sin PR0.roofPitch
+            local cosP = cos PR0.roofPitch
+
+            -- normales des versants (unitaires, vers l'extérieur du toit)
+            local nLo = inw*(-sinP) + [0,0,cosP]   -- versant qui monte vers w=wmC côté wMin
+            local nHi = inw*( sinP) + [0,0,cosP]   -- versant qui monte vers w=wmC côté wMax
+            local nCpL = ex*(-sinP) + [0,0,cosP]   -- croupe gauche (monte vers +u depuis uMin)
+            local nCpR = ex*( sinP) + [0,0,cosP]   -- croupe droite (monte vers -u depuis uMax)
+
+            -- relèvement du couvre-joint : il se pose sur le méplat du bourrage
+            local zLift = thR * cosP
+
             if PR0.roofMode == "Gable" then
             (
-                FR_RidgeCap "FRAMER_Roof_Faitage" \
+                -- bourrage du faîtage (sur toute la longueur du débord)
+                FR_RidgeFill "FRAMER_Roof_Bourre" \
                     (p1 + ex*uMin + inw*wmC + [0,0,totalH+hC]) \
-                    (p1 + ex*uMax + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
+                    (p1 + ex*uMax + inw*wmC + [0,0,totalH+hC]) nLo nHi thR roofMat
+
+                FR_RidgeCap "FRAMER_Roof_Faitage" \
+                    (p1 + ex*uMin + inw*wmC + [0,0,totalH+hC+zLift]) \
+                    (p1 + ex*uMax + inw*wmC + [0,0,totalH+hC+zLift]) rwC rhC sC rndC roofMat
             )
             else
             (
@@ -3236,14 +3414,48 @@ fn FR_RoofContour pts segPRs bases totalH =
                 local uR1 = uMin + (wmC - wMin)
                 local uR2 = uMax - (wmC - wMin)
 
-                FR_RidgeCap "FRAMER_Roof_Faitage" \
+                -- bourrage du faîtage + des 4 arêtiers
+                FR_RidgeFill "FRAMER_Roof_Bourre" \
                     (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC]) \
-                    (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
+                    (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC]) nLo nHi thR roofMat
 
-                FR_RidgeCap "FRAMER_Roof_HipFL" (p1 + ex*uMin + inw*wMin + [0,0,totalH]) (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
-                FR_RidgeCap "FRAMER_Roof_HipFR" (p1 + ex*uMax + inw*wMin + [0,0,totalH]) (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
-                FR_RidgeCap "FRAMER_Roof_HipBL" (p1 + ex*uMin + inw*wMax + [0,0,totalH]) (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
-                FR_RidgeCap "FRAMER_Roof_HipBR" (p1 + ex*uMax + inw*wMax + [0,0,totalH]) (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC]) rwC rhC sC rndC roofMat
+                FR_RidgeFill "FRAMER_Roof_BourreFL" \
+                    (p1 + ex*uMin + inw*wMin + [0,0,totalH]) \
+                    (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC]) nCpL nLo thR roofMat
+
+                FR_RidgeFill "FRAMER_Roof_BourreFR" \
+                    (p1 + ex*uMax + inw*wMin + [0,0,totalH]) \
+                    (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC]) nCpR nLo thR roofMat
+
+                FR_RidgeFill "FRAMER_Roof_BourreBL" \
+                    (p1 + ex*uMin + inw*wMax + [0,0,totalH]) \
+                    (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC]) nCpL nHi thR roofMat
+
+                FR_RidgeFill "FRAMER_Roof_BourreBR" \
+                    (p1 + ex*uMax + inw*wMax + [0,0,totalH]) \
+                    (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC]) nCpR nHi thR roofMat
+
+                -- couvre-joints relevés sur les méplats (le décalage latéral
+                -- thR*(n1+n2)/2 centre le profil sur le méplat de chaque arêtier)
+                FR_RidgeCap "FRAMER_Roof_Faitage" \
+                    (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC+zLift]) \
+                    (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC+zLift]) rwC rhC sC rndC roofMat
+
+                FR_RidgeCap "FRAMER_Roof_HipFL" \
+                    (p1 + ex*uMin + inw*wMin + [0,0,totalH] + thR*(nCpL+nLo)/2.0) \
+                    (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC] + thR*(nCpL+nLo)/2.0) rwC rhC sC rndC roofMat
+
+                FR_RidgeCap "FRAMER_Roof_HipFR" \
+                    (p1 + ex*uMax + inw*wMin + [0,0,totalH] + thR*(nCpR+nLo)/2.0) \
+                    (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC] + thR*(nCpR+nLo)/2.0) rwC rhC sC rndC roofMat
+
+                FR_RidgeCap "FRAMER_Roof_HipBL" \
+                    (p1 + ex*uMin + inw*wMax + [0,0,totalH] + thR*(nCpL+nHi)/2.0) \
+                    (p1 + ex*uR1 + inw*wmC + [0,0,totalH+hC] + thR*(nCpL+nHi)/2.0) rwC rhC sC rndC roofMat
+
+                FR_RidgeCap "FRAMER_Roof_HipBR" \
+                    (p1 + ex*uMax + inw*wMax + [0,0,totalH] + thR*(nCpR+nHi)/2.0) \
+                    (p1 + ex*uR2 + inw*wmC + [0,0,totalH+hC] + thR*(nCpR+nHi)/2.0) rwC rhC sC rndC roofMat
             )
         )
 
@@ -4869,7 +5081,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.25" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.26" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -6014,8 +6226,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.25" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.25 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.25")
+                "FRAMER | Générateur de façades 0.6.26 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.26")
         )
         catch()
 
