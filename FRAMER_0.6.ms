@@ -1,7 +1,13 @@
 /*
-    FRAMER 0.6.22
+    FRAMER 0.6.23
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    CORRIGÉ EN 0.6.23 :
+    - COUVRE-FAÎTAGE UNIVERSEL : en façade SIMPLE aussi, le couvre-faîtage
+      (et les arêtiers du 4 pans, et les arêtes du plateau du mansard) est
+      désormais TOUJOURS posé — avant il fallait régler Couvre-joint ≠ Aucun,
+      sinon la V-groove entre versants restait ouverte. None -> profil Tri.
 
     CORRIGÉ EN 0.6.22 :
     - FENTE AU FAÎTAGE / AUX ARÊTES (toits en pente du mode contour) : chaque
@@ -1926,9 +1932,9 @@ fn FR_RoofGableRect p basis W D z0 pitch over matRoof matWall rk:"None" rw:0.18 
         FR_Prisma (p+"_GableL") #((FR_Pt basis 0.0 v1 z0), (FR_Pt basis 0.0 v2 z0), (FR_Pt basis 0.0 vm (z0+h))) matWall th
         FR_Prisma (p+"_GableR") #((FR_Pt basis W v1 z0), (FR_Pt basis W v2 z0), (FR_Pt basis W vm (z0+h))) matWall th
 
-        -- couvre-joint : faîtage
-        if rk != "None" do
-            FR_RidgeCap (p+"_Ridge") (FR_Pt basis u1 vm (z0+h)) (FR_Pt basis u2 vm (z0+h)) rw rh ((rw/2)*tan pitch) (rk == "Round") matRoof
+        -- couvre-joint : faîtage — 0.6.22 : TOUJOURS posé (bouche la V-groove
+        -- entre les deux versants extrudés selon leurs normales) ; None -> Tri
+        FR_RidgeCap (p+"_Ridge") (FR_Pt basis u1 vm (z0+h)) (FR_Pt basis u2 vm (z0+h)) rw rh ((rw/2)*tan pitch) (rk == "Round") matRoof
     )
 )
 
@@ -1952,8 +1958,8 @@ fn FR_RoofHipRect p basis W D z0 pitch over matRoof rk:"None" rw:0.18 rh:0.10 =
         FR_Prisma (p+"_HipL") #((FR_Pt basis u1 v2 z0), (FR_Pt basis u1 v1 z0), (FR_Pt basis r1 vm (z0+h))) matRoof th
         FR_Prisma (p+"_HipR") #((FR_Pt basis u2 v1 z0), (FR_Pt basis u2 v2 z0), (FR_Pt basis r2 vm (z0+h))) matRoof th
 
-        -- couvre-joint : faîtage + 4 arêtiers (diagonales)
-        if rk != "None" do
+        -- couvre-joint : faîtage + 4 arêtiers (diagonales) — 0.6.22 : TOUJOURS
+        if true do
         (
             local s = (rw/2) * tan pitch
 
@@ -2251,7 +2257,8 @@ fn FR_RoofMansardRect p basis W D z0 pitch p2 over topW parH matRoof rk:"None" r
             )
 
             -- couvre-joint : les 4 arêtes du plateau (jonction terrasson/plateau)
-            if rk != "None" do
+            -- 0.6.22 : TOUJOURS posé
+            if true do
             (
                 local s = (rw/2) * tan p2
 
@@ -4689,7 +4696,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.22" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.23" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -5834,8 +5841,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.22" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.22 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.22")
+                "FRAMER | Générateur de façades 0.6.23 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.23")
         )
         catch()
 
