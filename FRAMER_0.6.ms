@@ -1,7 +1,22 @@
 /*
-    FRAMER 0.6.16
+    FRAMER 0.6.17
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.17 :
+    - LUCARNES DU TOIT MANSARDÉ (onglet Toit, « Lucarnes (mansard) ») :
+      les 3 styles classiques, construits dans les règles de l'art (sans
+      booléens) — chevet vertical posé sur le brisis avec baie vitrée en
+      retrait, joues latérales noyées dans la pente, toiture qui MEURT dans
+      le brisis :
+        • Fronton   : pignon triangulaire coiffé d'une cornice en bandeau ;
+        • Rectangulaire : bâtière simple à deux versants ;
+        • Capucine  : toit courbe en demi-cylindre (arc balayé) ;
+        • Alterné   : une lucarne à toit EN PENTE, puis une à toit ARRONDI,
+          la répartition traditionnelle.
+      Réglages : largeur, hauteur, espacement (rangée centrée sur la
+      façade). Posées sur le brisis avant (côté rue). Enregistré dans les
+      presets (lucMode/lucW/lucH/lucStep, FRAMER_PARAMS=25).
 
     NOUVEAU EN 0.6.16 :
     - TERRASSE « EN BAC » (toit-terrasse, façade simple ET mode contour) :
@@ -401,6 +416,7 @@ global FR_EntCodes = #("None","Center","Left","Right","Random")
 global FR_RailCodes = #("None","Glass","Bars","Solid","Lisse")
 global FR_CapCodes = #("None","Slab","Lam")
 global FR_RoofCodes = #("None","Flat","Gable","Hip","Mansard")
+global FR_LucCodes = #("None","Fronton","Rectangulaire","Capucine","Alterné")
 global FR_RidgeCodes = #("None","Tri","Round")
 
 -- valeurs par étage du mode "indépendants" (globales : un local de rollout valait OK)
@@ -485,6 +501,11 @@ struct FRParams
     -- creux intérieur (le plateau descend de cette valeur sous le sommet)
     acrTh = 0.55,
     acrGorge = 0.4,
+    -- lucarnes du mansard (0.6.17) : style, largeur, hauteur, espacement (m)
+    lucMode = "None",
+    lucW = 1.0,
+    lucH = 1.2,
+    lucStep = 3.0,
     -- toit mansardé : largeur du plateau plat sommital (m) et pente du
     -- terrasson (degrés) ; le brisis utilise la pente principale (roofPitch)
     mansTop = 2.0,
@@ -624,7 +645,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=21\n" to:ss
+    format "FRAMER_PARAMS=25\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -684,6 +705,10 @@ fn FR_ParamsToString PR =
     format "roofDepth=%\n" (FR_F PR.roofDepth) to:ss
     format "acrTh=%\n" (FR_F PR.acrTh) to:ss
     format "acrGorge=%\n" (FR_F PR.acrGorge) to:ss
+    format "lucMode=%\n" PR.lucMode to:ss
+    format "lucW=%\n" (FR_F PR.lucW) to:ss
+    format "lucH=%\n" (FR_F PR.lucH) to:ss
+    format "lucStep=%\n" (FR_F PR.lucStep) to:ss
     format "mansTop=%\n" (FR_F PR.mansTop) to:ss
     format "mansP2=%\n" (FR_F PR.mansP2) to:ss
     format "ridgeMode=%\n" PR.ridgeMode to:ss
@@ -796,6 +821,10 @@ fn FR_ParamsFromString txt =
                 "roofDepth": PR.roofDepth = v as float
                 "acrTh": PR.acrTh = v as float
                 "acrGorge": PR.acrGorge = v as float
+                "lucMode": PR.lucMode = v
+                "lucW": PR.lucW = v as float
+                "lucH": PR.lucH = v as float
+                "lucStep": PR.lucStep = v as float
                 "mansTop": PR.mansTop = v as float
                 "mansP2": PR.mansP2 = v as float
                 "ridgeMode": PR.ridgeMode = v
@@ -1882,7 +1911,229 @@ fn FR_RoofHipRect p basis W D z0 pitch over matRoof rk:"None" rw:0.18 rh:0.10 =
 -- + acrotère (roofPar) — les 4 côtés ont la même course horizontale, la
 -- plate-forme reste un rectangle (comme un toit à quatre pans à double
 -- rupture de pente)
-fn FR_RoofMansardRect p basis W D z0 pitch p2 over topW parH matRoof rk:"None" rw:0.18 rh:0.10 =
+-- LUCARNES DU MANSARD (0.6.17) — géométrie solide, sans booléens, dans les
+-- règles de l'art : chevet vertical (mur + baie vitrée), joues noyées dans le
+-- brisis, toiture de la lucarne mourant dans la pente (le faîtage horizontal
+-- disparaît dans le brisis là où la pente atteint sa hauteur).
+-- Coordonnées en repère basis (u = façade, v = vers l'arrière, z = haut) ;
+-- le brisis avant monte selon z(u,v) = zF + (v - vF) * tanP.
+fn FR_Lucarne p basis uC vF zF tanP lucW lucH style matWall matRoof matGlass =
+(
+    local hw = lucW / 2.0
+    local emb = 0.15
+    local ovh = 0.06
+
+    local uL = uC - hw
+    local uR = uC + hw
+
+    local zB = zF - emb
+    local zT = zF + lucH
+    local rh = amax #(0.2, lucW * 0.35)
+    local zR = zT + rh
+
+    -- le toit de la lucarne s'enfonce dans le brisis : v où la pente atteint le faîtage
+    local dvE = (lucH + rh) / tanP + 0.15
+    local vE = vF + dvE
+
+    -- trois mailles : chevet (mur), joues + toiture (zinc), vitrage
+    local vW = #() ; local fW = #()
+    local vR = #() ; local fR = #()
+    local vG = #() ; local fG = #()
+
+    /* --- chevet (façade de la lucarne, normale vers la rue) --- */
+    local cp = #()
+
+    append cp [uL, zB, 0]
+    append cp [uR, zB, 0]
+    append cp [uR, zT, 0]
+
+    if style == "Capucine" then
+    (
+        -- arc au-dessus du chevet (demi-ellipse, comme le couvre-joint arrondi)
+        for k = 5 to 1 by -1 do
+        (
+            local a = 180.0 - k * 30.0
+            append cp [uC + hw * (cos a), zT + rh * (sin a), 0]
+        )
+    )
+    else
+        append cp [uC, zR, 0]
+
+    append cp [uL, zT, 0]
+
+    local nc = cp.count
+
+    for q in cp do append vW (basis[4] + basis[1]*q.x + basis[2]*vF + basis[3]*q.y)
+
+    for k = 2 to nc - 1 do
+        append fW #(1, k, k + 1)
+
+    /* --- joues (murs latéraux, noyées dans le brisis) + toiture --- */
+    local zBvE = zF + dvE * tanP - emb
+
+    for su in #(uL, uR) do
+    (
+        local sBase = vR.count
+
+        append vR (basis[4] + basis[1]*su + basis[2]*vF + basis[3]*zB)
+        append vR (basis[4] + basis[1]*su + basis[2]*vE + basis[3]*zBvE)
+        append vR (basis[4] + basis[1]*su + basis[2]*vE + basis[3]*zT)
+        append vR (basis[4] + basis[1]*su + basis[2]*vF + basis[3]*zT)
+
+        -- la joue gauche sort vers -u, la droite vers +u : winding opposé
+        if su == uL then
+        (
+            append fR #(sBase + 1, sBase + 2, sBase + 3)
+            append fR #(sBase + 1, sBase + 3, sBase + 4)
+        )
+        else
+        (
+            append fR #(sBase + 1, sBase + 3, sBase + 2)
+            append fR #(sBase + 1, sBase + 4, sBase + 3)
+        )
+    )
+
+    if style == "Capucine" then
+    (
+        -- profil en arc balayé de vF-ovh à vE
+        local nA = 7
+        local rArc = amax #(0.2, (lucW + ovh*2) * 0.35)
+        local hwA = (lucW + ovh*2) / 2.0
+        local s0 = vR.count
+
+        for k = 0 to nA - 1 do
+        (
+            local a = 180.0 - k * (180.0 / (nA - 1))
+            append vR (basis[4] + basis[1]*(uC + hwA * (cos a)) + basis[2]*(vF - ovh) + basis[3]*(zT + rArc * (sin a)))
+        )
+
+        for k = 0 to nA - 1 do
+        (
+            local a = 180.0 - k * (180.0 / (nA - 1))
+            append vR (basis[4] + basis[1]*(uC + hwA * (cos a)) + basis[2]*vE + basis[3]*(zT + rArc * (sin a)))
+        )
+
+        for k = 1 to nA - 1 do
+        (
+            append fR #(s0 + k, s0 + k + 1, s0 + nA + k + 1)
+            append fR #(s0 + k, s0 + nA + k + 1, s0 + nA + k)
+        )
+    )
+    else
+    (
+        -- deux versants rectilignes (fronton / rectangulaire)
+        local uL2 = uL - ovh
+        local uR2 = uR + ovh
+        local vF2 = vF - ovh
+
+        local r1s = vR.count
+
+        append vR (basis[4] + basis[1]*uL2 + basis[2]*vF2 + basis[3]*zT)
+        append vR (basis[4] + basis[1]*uC + basis[2]*vF2 + basis[3]*zR)
+        append vR (basis[4] + basis[1]*uC + basis[2]*vE + basis[3]*zR)
+        append vR (basis[4] + basis[1]*uL2 + basis[2]*vE + basis[3]*zT)
+
+        append fR #(r1s + 1, r1s + 2, r1s + 3)
+        append fR #(r1s + 1, r1s + 3, r1s + 4)
+
+        local r2s = vR.count
+
+        append vR (basis[4] + basis[1]*uC + basis[2]*vF2 + basis[3]*zR)
+        append vR (basis[4] + basis[1]*uR2 + basis[2]*vF2 + basis[3]*zT)
+        append vR (basis[4] + basis[1]*uR2 + basis[2]*vE + basis[3]*zT)
+        append vR (basis[4] + basis[1]*uC + basis[2]*vE + basis[3]*zR)
+
+        append fR #(r2s + 1, r2s + 2, r2s + 3)
+        append fR #(r2s + 1, r2s + 3, r2s + 4)
+    )
+
+    /* --- baie vitrée (en retrait derrière le chevet) --- */
+    if matGlass != undefined and lucW > 0.6 do
+    (
+        local gu1 = uL + 0.15
+        local gu2 = uR - 0.15
+        local gz1 = zB + 0.35
+        local gz2 = zT - 0.12
+        local gv = vF + 0.03
+
+        append vG (basis[4] + basis[1]*gu1 + basis[2]*gv + basis[3]*gz1)
+        append vG (basis[4] + basis[1]*gu2 + basis[2]*gv + basis[3]*gz1)
+        append vG (basis[4] + basis[1]*gu2 + basis[2]*gv + basis[3]*gz2)
+        append vG (basis[4] + basis[1]*gu1 + basis[2]*gv + basis[3]*gz2)
+
+        append fG #(1, 2, 3)
+        append fG #(1, 3, 4)
+    )
+
+    -- création des mailles
+    if fW.count > 0 do
+    (
+        local m = mesh vertices:vW faces:fW
+        update m
+        FR_NoSmooth m
+        m.name = p
+        m.material = matWall
+        append FR_Pool m
+    )
+
+    if fR.count > 0 do
+    (
+        local m = mesh vertices:vR faces:fR
+        update m
+        FR_NoSmooth m
+        m.name = p + "_R"
+        m.material = matRoof
+        append FR_Pool m
+    )
+
+    if fG.count > 0 do
+    (
+        local m = mesh vertices:vG faces:fG
+        update m
+        FR_NoSmooth m
+        m.name = p + "_V"
+        m.material = matGlass
+        append FR_Pool m
+    )
+
+    -- fronton : cornice en bandeau sous le pignon
+    if style == "Fronton" do
+        FR_LocalBox (p+"_Fr") uC (vF - 0.01) zT (lucW + 0.12) 0.07 0.09 basis matRoof
+)
+
+-- rangée de lucarnes régulièrement espacées sur un brisis (avant, côté rue)
+fn FR_LucarneRow p basis u1 u2 v1 z0 tanP lucW lucH lucStep mode matWall matRoof matGlass =
+(
+    if lucW > 0.4 and lucH > 0.4 and lucStep > 0.5 and tanP > 0.05 do
+    (
+        local uStart = u1 + lucW/2 + 0.3
+        local uEnd = u2 - lucW/2 - 0.3
+
+        if uEnd > uStart do
+        (
+            local n = 1 + (((uEnd - uStart) / lucStep) as integer)
+            local mid = (u1 + u2) / 2.0
+            local first = mid - (n - 1) * lucStep / 2.0
+
+            -- plan avant : un peu au-dessus de l'égout du brisis
+            local vF = v1 + 0.30
+            local zF = z0 + 0.30 * tanP
+
+            for i = 1 to n do
+            (
+                local uC = first + (i - 1) * lucStep
+                local style = mode
+
+                -- alterné : une à toit en pente (fronton), une à toit arrondi (capucine)
+                if mode == "Alterné" do style = (if mod i 2 == 1 then "Fronton" else "Capucine")
+
+                FR_Lucarne (p + "_Luc" + (i as string)) basis uC vF zF tanP lucW lucH style matWall matRoof matGlass
+            )
+        )
+    )
+)
+
+fn FR_RoofMansardRect p basis W D z0 pitch p2 over topW parH matRoof rk:"None" rw:0.18 rh:0.10 luc:"None" lw:1.0 lh:1.2 lst:3.0 lucWall:undefined lucGlass:undefined =
 (
     local th = 0.12
     local u1 = -over
@@ -1915,6 +2166,10 @@ fn FR_RoofMansardRect p basis W D z0 pitch p2 over topW parH matRoof rk:"None" r
         FR_Prisma (p+"_TeB") #((FR_Pt basis (u2-r1) (v2-r1) (z0+h1)), (FR_Pt basis (u1+r1) (v2-r1) (z0+h1)), (FR_Pt basis (u1+t1) (v2-t1) (z0+h2)), (FR_Pt basis (u2-t1) (v2-t1) (z0+h2))) matRoof th
         FR_Prisma (p+"_TeL") #((FR_Pt basis (u1+r1) (v2-r1) (z0+h1)), (FR_Pt basis (u1+r1) (v1+r1) (z0+h1)), (FR_Pt basis (u1+t1) (v1+t1) (z0+h2)), (FR_Pt basis (u1+t1) (v2-t1) (z0+h2))) matRoof th
         FR_Prisma (p+"_TeR") #((FR_Pt basis (u2-r1) (v1+r1) (z0+h1)), (FR_Pt basis (u2-r1) (v2-r1) (z0+h1)), (FR_Pt basis (u2-t1) (v2-t1) (z0+h2)), (FR_Pt basis (u2-t1) (v1+t1) (z0+h2))) matRoof th
+
+        -- lucarnes du brisis (côté rue uniquement) : 0.6.17
+        if luc != "None" and lucWall != undefined do
+            FR_LucarneRow (p+"_Luc") basis (u1+r1) (u2-r1) v1 z0 (tan pitch) lw lh lst luc lucWall matRoof lucGlass
 
         -- plate-forme plane au sommet + acrotère (comme le toit-terrasse)
         local fz0 = z0 + h2
@@ -3178,7 +3433,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
         else if PR.roofMode == "Hip" then
             FR_RoofHipRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat rk:PR.ridgeMode rw:PR.ridgeW rh:PR.ridgeH
         else if PR.roofMode == "Mansard" then
-            FR_RoofMansardRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.mansP2 PR.roofOver PR.mansTop PR.roofPar roofMat rk:PR.ridgeMode rw:PR.ridgeW rh:PR.ridgeH
+            FR_RoofMansardRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.mansP2 PR.roofOver PR.mansTop PR.roofPar roofMat rk:PR.ridgeMode rw:PR.ridgeW rh:PR.ridgeH luc:PR.lucMode lw:PR.lucW lh:PR.lucH lst:PR.lucStep lucWall:wallMat lucGlass:glassMat
     )
 
     true
@@ -4060,7 +4315,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.17" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -4205,7 +4460,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
     label l_spRoofPitch "Pente (degrés) :" pos:[25,232] width:185 height:16
     spinner spRoofPitch "" pos:[215,230] width:190 range:[10,80,30] type:#float scale:1 tooltip:"Pente des versants (toits à deux ou quatre pans). Pour un mansard, monter à 60-75° : c'est la pente raide du brisis."
     label l_spRoofOver "Débord du toit :" pos:[25,260] width:185 height:16
-    spinner spRoofOver "" pos:[215,258] width:190 range:[0,2,0.4] type:#float scale:0.05 tooltip:"Saillie du toit au-delà des murs. En mode contour : le contour est décalé vers l'EXTÉRIEUR de cette valeur pour dessiner le toit (fond fermé vu de dessous)."
+    spinner spRoofOver "" pos:[215,258] width:190 range:[0,2,0.5] type:#float scale:0.05 tooltip:"Saillie du toit au-delà des murs. En mode contour : le contour est décalé vers l'EXTÉRIEUR de cette valeur pour dessiner le toit (fond fermé vu de dessous)."
     label l_spRoofPar "Hauteur de l'acrotère :" pos:[25,288] width:185 height:16
     spinner spRoofPar "" pos:[215,286] width:190 range:[0,2,0.5] type:#float scale:0.05 tooltip:"Garde-corps plein autour de la terrasse (toit-terrasse uniquement)."
     label l_spRoofDepth "Profondeur du bâtiment :" pos:[25,316] width:185 height:16
@@ -4224,6 +4479,15 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
     label l_spRidgeH "Hauteur du couvre-joint :" pos:[25,576] width:185 height:16
     spinner spRidgeH "" pos:[215,574] width:190 range:[0.02,0.5,0.10] type:#float scale:0.01 tooltip:"Hauteur du couvre-joint au-dessus de la jonction."
     label lbRoofHelp "Le toit part du contour décalé vers l'extérieur (débord), fond fermé vu de dessous. Terrasse : dalle + acrotère suivant le contour. Deux/quatre pans : faîtage sur le plus long segment, versants suivant le contour (footprints convexes recommandés ; pas de pignons maçonnés en mode contour). Un toit remplace la corniche." pos:[25,394] width:380 height:48
+
+    -- lucarnes du toit mansardé (0.6.17)
+    dropdownList ddLuc "Lucarnes (mansard) :" pos:[25,600] width:380 items:FR_LucCodes selection:1 tooltip:"Lucarnes posées sur le brisis du mansard (côté rue). Fronton : pignon triangulaire à cornice. Rectangulaire : toit en bâtière simple. Capucine : toit courbe (demi-cylindre). Alterné : une lucarne à toit en pente, puis une à toit arrondi — la répartition traditionnelle."
+    label l_spLucW "Largeur des lucarnes :" pos:[25,650] width:185 height:16
+    spinner spLucW "" pos:[215,648] width:190 range:[0.4,4,1.0] type:#float scale:0.05 tooltip:"Largeur du chevet de la lucarne."
+    label l_spLucH "Hauteur des lucarnes :" pos:[25,676] width:185 height:16
+    spinner spLucH "" pos:[215,674] width:190 range:[0.4,4,1.2] type:#float scale:0.05 tooltip:"Hauteur du chevet de la lucarne (du bas de la baie au départ du toit)."
+    label l_spLucStep "Espacement :" pos:[25,702] width:185 height:16
+    spinner spLucStep "" pos:[215,700] width:190 range:[0.5,10,3.0] type:#float scale:0.1 tooltip:"Distance entre deux lucarnes consécutives (centrage automatique sur la façade)."
 
     /* ----- onglet 6 : Variation ----- */
 
@@ -4427,6 +4691,13 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
         spRidgeW.visible = t5
         l_spRidgeH.visible = t5
         spRidgeH.visible = t5
+        l_spLucW.visible = t5
+        spLucW.visible = t5
+        l_spLucH.visible = t5
+        spLucH.visible = t5
+        l_spLucStep.visible = t5
+        spLucStep.visible = t5
+        ddLuc.visible = t5
         lbRoofHelp.visible = t5
 
         gb6.visible = t6
@@ -4582,6 +4853,15 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
         spMansTop.enabled = mans
         l_spMansTop.enabled = mans
 
+        -- les lucarnes ne servent qu'au mansard
+        ddLuc.enabled = mans
+        spLucW.enabled = mans
+        l_spLucW.enabled = mans
+        spLucH.enabled = mans
+        l_spLucH.enabled = mans
+        spLucStep.enabled = mans
+        l_spLucStep.enabled = mans
+
         -- le couvre-joint ne sert qu'aux toits avec versants
         local ridged = (sloped or mans)
         ddRidge.enabled = ridged
@@ -4643,6 +4923,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
         PR.ridgeMode = FR_RidgeCodes[ddRidge.selection]
         PR.ridgeW = spRidgeW.value
         PR.ridgeH = spRidgeH.value
+        PR.lucMode = FR_LucCodes[ddLuc.selection]
+        PR.lucW = spLucW.value
+        PR.lucH = spLucH.value
+        PR.lucStep = spLucStep.value
 
         PR.seedVal = spSeed.value
         PR.variation = spVar.value
@@ -4798,6 +5082,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
         ddRidge.selection = ri2
         spRidgeW.value = PR.ridgeW
         spRidgeH.value = PR.ridgeH
+        local li = findItem FR_LucCodes PR.lucMode
+        if li == 0 do li = 1
+        ddLuc.selection = li
+        spLucW.value = PR.lucW
+        spLucH.value = PR.lucH
+        spLucStep.value = PR.lucStep
         UpdateRoofUI()
 
         -- valeurs "anciennes façades" : serviront à compléter les tableaux manquants
@@ -4965,6 +5255,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
             local vRoofD = FR_CSegs[FR_CurSeg].roofDepth
             local vAcrTh = FR_CSegs[FR_CurSeg].acrTh
             local vAcrGorge = FR_CSegs[FR_CurSeg].acrGorge
+            local vLucM = FR_CSegs[FR_CurSeg].lucMode
+            local vLucW = FR_CSegs[FR_CurSeg].lucW
+            local vLucH = FR_CSegs[FR_CurSeg].lucH
+            local vLucS = FR_CSegs[FR_CurSeg].lucStep
             local vColW = FR_CSegs[FR_CurSeg].colWall
             local vColF = FR_CSegs[FR_CurSeg].colFrame
             local vColP = FR_CSegs[FR_CurSeg].colPier
@@ -5018,6 +5312,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
                     FR_CSegs[k].roofDepth = vRoofD
                     FR_CSegs[k].acrTh = vAcrTh
                     FR_CSegs[k].acrGorge = vAcrGorge
+                    FR_CSegs[k].lucMode = vLucM
+                    FR_CSegs[k].lucW = vLucW
+                    FR_CSegs[k].lucH = vLucH
+                    FR_CSegs[k].lucStep = vLucS
                     FR_CSegs[k].colWall = vColW
                     FR_CSegs[k].colFrame = vColF
                     FR_CSegs[k].colPier = vColP
@@ -5161,8 +5459,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.16 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.16")
+                "FRAMER | Générateur de façades 0.6.17 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.17")
         )
         catch()
 
@@ -5658,6 +5956,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
                     PRk.ridgeMode = PR1.ridgeMode
                     PRk.ridgeW = PR1.ridgeW
                     PRk.ridgeH = PR1.ridgeH
+                    PRk.lucMode = PR1.lucMode
+                    PRk.lucW = PR1.lucW
+                    PRk.lucH = PR1.lucH
+                    PRk.lucStep = PR1.lucStep
 
                     -- horizontal : recalculé pour ce segment (même pas de travée)
                     PRk.width = widths[k]
@@ -5966,6 +6268,13 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
     on spRidgeW entered do FR_LiveTick()
     on spRidgeH buttonup do FR_LiveTick()
     on spRidgeH entered do FR_LiveTick()
+    on ddLuc selected i do FR_LiveTick()
+    on spLucW buttonup do FR_LiveTick()
+    on spLucW entered do FR_LiveTick()
+    on spLucH buttonup do FR_LiveTick()
+    on spLucH entered do FR_LiveTick()
+    on spLucStep buttonup do FR_LiveTick()
+    on spLucStep entered do FR_LiveTick()
 )
 
 createDialog FRAMER_UI

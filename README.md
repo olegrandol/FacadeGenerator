@@ -28,6 +28,21 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.17
+
+- **Lucarnes du toit mansardé** (onglet Toit, « Lucarnes (mansard) ») : les 3
+  styles classiques, dans les règles de l'art et sans booléens — chevet
+  vertical posé sur le brisis avec baie vitrée en retrait, joues latérales
+  noyées dans la pente, toiture qui meurt dans le brisis :
+  - **Fronton** : pignon triangulaire coiffé d'une cornice en bandeau ;
+  - **Rectangulaire** : bâtière simple à deux versants ;
+  - **Capucine** : toit courbe en demi-cylindre (arc balayé) ;
+  - **Alterné** : une lucarne à toit en pente, puis une à toit arrondi —
+    la répartition traditionnelle.
+  Réglages largeur / hauteur / espacement (rangée centrée sur la façade).
+  Posées sur le brisis avant (côté rue). Presets : lucMode/lucW/lucH/lucStep
+  (FRAMER_PARAMS=25).
+
 ## Version 0.6.16
 
 - **Terrasse « en bac »** (toit-terrasse, façade simple et mode contour) :
