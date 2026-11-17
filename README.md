@@ -28,6 +28,20 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.27
+
+- **Instanciation des étages identiques (performance des tours)** : quand tous
+  les étages ont exactement les mêmes réglages (hauteur, type, fenêtres,
+  balcon, profondeur) et qu'aucun tirage aléatoire ne dépend de l'étage (pas
+  de « Mix » par travée, volets/casquettes/arcs à 0 % ou 100 %, pas de
+  variation de profondeur de dalles), seul l'étage 1 est construit et les
+  suivants sont des **instances** (copies liées) translatées en Z. Temps de
+  génération et mémoire divisés par le nombre d'étages ; la régénération
+  (changement de rdc, etc.) redevient réactive. Trace `FR_INSTANCIE` dans le
+  Listener. Si un seul réglage diffère ou qu'un hasard est actif, retour
+  automatique à la construction complète — aucun changement visuel.
+  NB : la case « fusionner » recolle tout en un mesh et annule le gain.
+
 ## Version 0.6.26
 
 - **Normales des pans corrigées (la cause des « faces noires »)** : dans

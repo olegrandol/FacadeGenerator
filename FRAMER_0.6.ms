@@ -1,7 +1,21 @@
 /*
-    FRAMER 0.6.26
+    FRAMER 0.6.27
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.27 (performance des tours) :
+    - INSTANCIATION DES ÉTAGES IDENTIQUES : quand tous les étages au-dessus du
+      rez-de-chaussée ont EXACTEMENT les mêmes réglages (hauteur, type, fenêtres,
+      balcon, profondeur) et qu'aucun tirage aléatoire ne dépend de l'étage
+      (pas de « Mix » par travée, volets/casquettes/arcs à 0 % ou 100 %, pas de
+      variation de profondeur de dalles), l'étage 1 seul est construit et les
+      suivants sont des INSTANCES (copies liées) translatées en Z. Temps de
+      génération et mémoire divisés par le nombre d'étages — les tours
+      redeviennent fluides, et la régénération (changement de rdc, etc.) aussi.
+      Une trace « FR_INSTANCIE » est écrite dans le Listener ; le résumé le
+      mentionne. Si UN SEUL réglage diffère ou qu'un hasard est actif, retour
+      automatique à l'ancienne construction complète (aucun changement visuel).
+      NB : la case « fusionner » annule le gain (elle recolle tout en un mesh).
 
     CORRIGÉ EN 0.6.26 (toits du mode contour) :
     - NORMALES DES PANS INVERSÉES (la cause des « faces noires » sur les toits) :
@@ -3640,6 +3654,49 @@ fn FR_Merge basis tag =
    d'angle du contour s'en chargent) et travées décalées de endExt.
 ========================================================= */
 
+/* ----------
+   0.6.27 : les étages au-dessus du 1er peuvent-ils être de simples INSTANCES ?
+   (demande « instancier pour les tours, c'est très long »)
+   Conditions : tous les réglages par étage identiques à l'étage 1, ET aucun
+   tirage aléatoire ne dépend de l'étage — sinon les copies seraient fausses :
+   - mix par travée (chaque travée de chaque étage tire son type) ;
+   - % intermédiaires de volets / casquettes / arcs (0 % ou 100 % = déterministe) ;
+   - variation de profondeur des dalles (flBalcVar) ;
+   - panneaux pleins/vitrés tirés au hasard (panOpaque intermédiaire).
+   Les variantes de travées (colVar) sont tirées UNE fois avant la boucle :
+   elles sont déjà communes à tous les étages, rien à faire.
+----------- */
+fn FR_FloorsCloneable PR floors =
+(
+    local ok = floors >= 2
+
+    if ok and PR.flBalc[1] == "Mix" do ok = false
+    if ok and PR.flBalcVar[1] > 0.0 do ok = false
+
+    if ok and PR.shutPct > 0.0 and PR.shutPct < 100.0 do ok = false
+    if ok and PR.capPct > 0.0 and PR.capPct < 100.0 do ok = false
+    if ok and PR.arcPct > 0.0 and PR.arcPct < 100.0 do ok = false
+
+    if ok and PR.flMode[1] == "Opaque panel" and PR.panOpaque > 0.0 and PR.panOpaque < 100.0 do ok = false
+
+    if ok do
+    (
+        for f = 2 to floors while ok do
+        (
+            if PR.flH[f] != PR.flH[1] do ok = false
+            if PR.flMode[f] != PR.flMode[1] do ok = false
+            if PR.flWin[f] != PR.flWin[1] do ok = false
+            if PR.flHt[f] != PR.flHt[1] do ok = false
+            if PR.flSill[f] != PR.flSill[1] do ok = false
+            if PR.flBalc[f] != PR.flBalc[1] do ok = false
+            if PR.flBalcD[f] != PR.flBalcD[1] do ok = false
+            if PR.flBalcVar[f] != PR.flBalcVar[1] do ok = false
+        )
+    )
+
+    ok
+)
+
 fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
 (
     local width = PR.width
@@ -3994,8 +4051,46 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
 
     /* ---------- étages (chacun avec sa hauteur, son type, ses fenêtres, son balcon) ---------- */
 
+    -- 0.6.27 : INSTANCIATION DES ÉTAGES IDENTIQUES (tours rapides).
+    -- L'étage 1 est construit normalement ; chaque étage suivant STRICTEMENT
+    -- identique (voir FR_FloorsCloneable) est une copie-instance de ses nœuds,
+    -- translatée de (zs[f] - zs[1]) en Z. Mémoire et temps divisés par le
+    -- nombre d'étages. Les instances partagent la géométrie et les matériaux ;
+    -- FR_Merge (case fusionner) les re-attache comme avant si besoin.
+    local cloneFloors = FR_FloorsCloneable PR floors
+    local f1First = FR_Pool.count + 1     -- début de la tranche FR_Pool de l'étage 1
+    local f1Last = 0                      -- fin de cette tranche (posé après l'étage 1)
+
     for f = 1 to floors do
     (
+        if cloneFloors and f > 1 then
+        (
+            local dz = zs[f] - zs[1]
+            local pfN = "FRAMER_F" + ((f) as string)
+            local nInst = 0
+
+            for k = f1First to f1Last do
+            (
+                local src = FR_Pool[k]
+
+                if isValidNode src do
+                (
+                    local inst = copy src instance:true
+                    inst.pos = src.pos + (basis[3] * dz)
+                    inst.name = pfN + (substring src.name 11 (src.name.count - 10))
+                    append FR_Pool inst
+                    nInst = nInst + 1
+                )
+            )
+
+            -- trace Listener (diagnostic)
+            format "FR_INSTANCIE: etage % copie de l'etage 1, % objets (dz=%)\n" f nInst dz
+
+            if f == floors and nInst > 0 do
+                FR_Summary = FR_Summary + " | étages 2 à " + ((floors) as string) + " instanciés (copies de l'étage 1)"
+        )
+        else
+        (
         local uH = PR.flH[f]
         local fm = PR.flMode[f]
         local kind = PR.flBalc[f]
@@ -4141,6 +4236,10 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
 
             FR_Balcony (pf+"_Cont") (-endM) (width+endM) z1 depth bdC basis pierMat frameMat glassMat railK:PR.railMode slTh:PR.slabTh
             append balcDepths bdC
+        )
+
+        -- 0.6.27 : fin de la tranche FR_Pool de l'étage 1 (modèle des instances)
+        if f == 1 do f1Last = FR_Pool.count
         )
     )
 
@@ -5081,7 +5180,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.26" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.27" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -6226,8 +6325,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.26" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.26 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.26")
+                "FRAMER | Générateur de façades 0.6.27 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.27")
         )
         catch()
 
