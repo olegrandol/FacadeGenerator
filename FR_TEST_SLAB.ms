@@ -293,7 +293,11 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
                 messageBox "Aucune face du dessus trouvée — bizarre."
             else
             (
-                -- Edit_Poly : inset GROUPE puis extrusion négative (manip manuelle)
+                -- memoriser les centres des faces du dessus AVANT inset
+                -- (pour retrouver les faces du MILIEU apres, les indices changent)
+                local centers = for f in topF collect polyop.getFaceCenter o f
+
+                -- Edit_Poly n°1 : inset GROUPE (manip manuelle)
                 modPanel.addModToSelection (Edit_Poly()) ui:on
                 local ep = o.modifiers[#Edit_Poly]
 
@@ -305,13 +309,47 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
 
                 format "T-BAC2: inset % commité\n" spInset.value
 
-                ep.SetOperation #ExtrudeFace
-                ep.extrudeFaceHeight = spExtr.value
-                ep.Commit ()
+                -- cuit l'inset dans le poly de base (sinon polyop ne voit pas
+                -- les nouvelles faces : elles vivent dans le modificateur)
+                convertToPoly o
 
-                format "T-BAC2: extrusion % commitée — BAC TERMINE\n" spExtr.value
+                -- retrouver les faces du MILIEU : normale +Z et centre identique
+                -- au centre d'origine (l'inset garde le milieu en place)
+                local nf2 = polyop.getNumFaces o
+                local midF = #()
 
-                messageBox "Bac construit (manip native Max) :\noutline + extrude + inset + extrude négatif.\nListener (F11) : lignes T-BAC2."
+                for f = 1 to nf2 do
+                (
+                    if (polyop.getFaceNormal o f).z > 0.9 do
+                    (
+                        local c = polyop.getFaceCenter o f
+                        for k = 1 to centers.count do
+                        (
+                            if distance c centers[k] < 0.005 do append midF f
+                        )
+                    )
+                )
+
+                format "T-BAC2: faces milieu retrouvees=% sur %\n" midF.count nf2
+
+                if midF.count == 0 then
+                    messageBox "Faces du milieu introuvables après inset."
+                else
+                (
+                    -- Edit_Poly n°2 : extrusion négative du fond (manip manuelle)
+                    modPanel.addModToSelection (Edit_Poly()) ui:on
+                    ep = o.modifiers[#Edit_Poly]
+
+                    ep.SetSelection #Face #{}
+                    ep.Select #Face (midF as bitArray)
+                    ep.SetOperation #ExtrudeFace
+                    ep.extrudeFaceHeight = spExtr.value
+                    ep.Commit ()
+
+                    format "T-BAC2: extrusion % commitée — BAC TERMINE\n" spExtr.value
+
+                    messageBox "Bac construit (manip native Max) :\noutline + extrude + inset + extrude négatif.\nListener (F11) : lignes T-BAC2."
+                )
             )
         )
     )
