@@ -1,7 +1,14 @@
 /*
-    FRAMER 0.6.23
+    FRAMER 0.6.24
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.24 :
+    - TRAÇAGE LISTENER du toit en mode contour (FR_TOIT-CONTOUR, FR_BANDES,
+      FR_BAC, FR_COUVRE-JOINT) : chaque construction/annulation est tracée
+      dans le Listener MAXScript — fin du diagnostic à l'aveugle.
+    - Une exception pendant le toit contour affiche désormais un message
+      (avant : retour SILENCIEUX à l'ancien bâtiment = "aucun changement").
 
     CORRIGÉ EN 0.6.23 :
     - COUVRE-FAÎTAGE UNIVERSEL : en façade SIMPLE aussi, le couvre-faîtage
@@ -1852,6 +1859,10 @@ fn FR_RidgeCap p A B w h s rnd mat =
     local ex = B - A
     local len = length ex
 
+    -- 0.6.24 : trace Listener (diagnostic)
+    if len <= 0.01 or w <= 0.01 or h <= 0.005 do
+        format "FR_COUVRE-JOINT ANNULE (%): len=% w=% h=%\n" p len w h
+
     if len > 0.01 and w > 0.01 and h > 0.005 do
     (
         ex = normalize ex
@@ -2685,6 +2696,10 @@ fn FR_RoofBac p O I z0 pT gorge mat =
 (
     local n = O.count
 
+    -- 0.6.24 : trace Listener (diagnostic)
+    if n < 3 or I.count != n or pT <= 0.05 do
+        format "FR_BAC ANNULE (%): O=% I=% parapet=%\n" p n I.count pT
+
     if n >= 3 and I.count == n and pT > 0.05 do
     (
         -- la gorge ne peut pas descendre sous le dessous du bac
@@ -2950,6 +2965,12 @@ fn FR_RoofBandContour p O I z1 z2 mat =
 (
     local n = O.count
 
+    -- 0.6.24 : trace Listener (diagnostic)
+    if n < 3 or I.count != n then
+        format "FR_BANDES ANNULEES (%): O=% I=%\n" p n I.count
+    else
+        format "FR_BANDES (%): % arêtes\n" p n
+
     if n >= 3 and I.count == n do
     (
         for k = 1 to n do
@@ -2969,6 +2990,9 @@ fn FR_RoofContour pts segPRs bases totalH =
 (
     local PR0 = segPRs[1]
     local roofMat = FR_Material "FRAMER_Roof" PR0.colRoof 100 apply:true
+
+    -- 0.6.24 : trace Listener (diagnostic)
+    format "FR_TOIT-CONTOUR: mode=% sommets=% debord=% totalH=%\n" PR0.roofMode pts.count PR0.roofOver totalH
 
     -- le toit part du contour décalé vers l'extérieur (débord), avec un fond fermé vu de dessous
     local oPts = FR_OffsetContour pts PR0.roofOver
@@ -4216,6 +4240,9 @@ fn FR_BuildContour pts segPRs root doMerge =
                 for n in FR_Pool do ( if isValidNode n do delete n )
                 FR_Pool = #()
                 FR_Ctx = ""
+                -- 0.6.24 : une exception pendant le toit revenait à revenir
+                -- SILENCIEUSEMENT à l'ancien bâtiment ("aucun changement")
+                messageBox "Erreur pendant la construction du TOIT (mode contour). Le détail est dans le Listener (F11 / MAXScript)."
                 throw()
             )
         )
@@ -4696,7 +4723,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.23" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.24" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -5841,8 +5868,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.23" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.23 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.23")
+                "FRAMER | Générateur de façades 0.6.24 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.24")
         )
         catch()
 
