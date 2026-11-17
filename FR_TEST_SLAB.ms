@@ -1,14 +1,15 @@
 -- ============================================================================
--- FR_TEST_SLAB.ms — test MINIMAL (étape par étape, étape 1)
--- NE FAIT QUE : contour -> outline vers l'EXTÉRIEUR (débord) -> extrusion
--- d'une épaisseur réglable. PAS de contour intérieur, PAS de gorge,
--- PAS d'acrotère. Juste la dalle.
+-- FR_TEST_SLAB.ms — ETAPE 1, version "OUTILS NATIFS MAX"
+-- NE FAIT QUE : contour -> outline vers l'EXTÉRIEUR (débord) -> Extrude
+-- (MODIFICATEUR NATIF de Max, comme la manip manuelle de l'utilisateur).
+-- AUCUN mesh custom, AUCUNE triangulation : si ça ne s'affiche pas,
+-- le problème est dans l'affichage, pas dans le calcul.
 --
 -- Utilisation :
---   1. Run Script -> fenêtre TEST SLAB.
+--   1. Run Script -> fenêtre TEST OUTLINE.
 --   2. "Rectangle test" (20 x 10 auto) ou Pick contour (spline fermée).
---   3. "CONSTRUIRE LA DALLE".
---   4. Listener (F11) : lignes T-SLAB.
+--   3. "OUTLINE + EXTRUDE".
+--   4. Listener (F11) : lignes T-OUT.
 -- ============================================================================
 
 try (destroyDialog FR_TESTSLAB) catch()
@@ -48,15 +49,6 @@ fn T_PolyCCW pts =
         for k = 1 to pts.count do append out pts[k]
 
     out
-)
-
-fn T_InTri p a b c =
-(
-    local d1 = cross (b-a) (p-a)
-    local d2 = cross (c-b) (p-b)
-    local d3 = cross (a-c) (p-c)
-
-    ((d1.z >= 0.0) and (d2.z >= 0.0) and (d3.z >= 0.0)) or ((d1.z <= 0.0) and (d2.z <= 0.0) and (d3.z <= 0.0))
 )
 
 fn T_SegX p1 p2 p3 p4 =
@@ -162,227 +154,42 @@ fn T_OffsetContour pts d =
 
     if not (T_PolySimple out) then
     (
-        format "T-SLAB: ECHEC offset, repli sans decalage\n"
+        format "T-OUT: ECHEC offset, repli sans decalage\n"
         out = pts
     )
     else if nTry > 0 do
-        format "T-SLAB: offset reduit a %\n" dd
+        format "T-OUT: offset reduit a %\n" dd
 
     out
 )
 
-fn T_Triangulate pts =
+-- spline VISIBLE à partir de points (outil natif Max)
+fn T_PtsToSpline pts nm col =
 (
-    local tris = #()
+    local sp = splineShape pos:[0,0,0]
+    local si = addNewSpline sp
 
-    pts = T_PolyCCW pts
+    for p in pts do addKnot sp si #corner #line p
+    close sp si
+    update sp
 
-    if pts.count >= 3 do
-    (
-        local rest = for k = 1 to pts.count collect k
-        local stuck = false
-        local guard = 0
+    sp.name = nm
+    sp.wirecolor = col
 
-        while rest.count > 2 and guard < 2000 and not stuck do
-        (
-            guard = guard + 1
-            local clipped = false
+    append FR_TESTSLAB_Pool sp
 
-            for k = 1 to rest.count while not clipped do
-            (
-                local k2 = k + 1
-                if k2 > rest.count do k2 = 1
-
-                local k3 = k2 + 1
-                if k3 > rest.count do k3 = 1
-
-                local a = rest[k]
-                local b = rest[k2]
-                local c = rest[k3]
-
-                if (cross (pts[b]-pts[a]) (pts[c]-pts[b])).z > 0.000001 do
-                (
-                    local empty = true
-
-                    for m in rest while empty do
-                    (
-                        if m != a and m != b and m != c and (T_InTri pts[m] pts[a] pts[b] pts[c]) do empty = false
-                    )
-
-                    if empty do
-                    (
-                        append tris #(a, b, c)
-                        deleteItem rest k2
-                        clipped = true
-                    )
-                )
-            )
-
-            if not clipped do
-            (
-                if rest.count == 3 then
-                (
-                    append tris #(rest[1], rest[2], rest[3])
-                    stuck = true
-                )
-                else
-                (
-                    local relaxed = false
-
-                    for k = 1 to rest.count while not relaxed do
-                    (
-                        local k2 = k + 1
-                        if k2 > rest.count do k2 = 1
-
-                        local k3 = k2 + 1
-                        if k3 > rest.count do k3 = 1
-
-                        local a = rest[k]
-                        local b = rest[k2]
-                        local c = rest[k3]
-
-                        if (cross (pts[b]-pts[a]) (pts[c]-pts[b])).z >= -0.000001 do
-                        (
-                            local empty = true
-
-                            for m in rest while empty do
-                            (
-                                if m != a and m != b and m != c and (T_InTri pts[m] pts[a] pts[b] pts[c]) do empty = false
-                            )
-
-                            if empty do
-                            (
-                                append tris #(a, b, c)
-                                deleteItem rest k2
-                                relaxed = true
-                            )
-                        )
-                    )
-
-                    if not relaxed do
-                    (
-                        local bestC = -1.0
-                        local bestK = 1
-
-                        for k = 1 to rest.count do
-                        (
-                            local k2 = k + 1
-                            if k2 > rest.count do k2 = 1
-                            local k3 = k2 + 1
-                            if k3 > rest.count do k3 = 1
-                            local cz = (cross (pts[rest[k2]]-pts[rest[k]]) (pts[rest[k3]]-pts[rest[k2]])).z
-                            if cz > bestC do
-                            (
-                                bestC = cz
-                                bestK = k2
-                            )
-                        )
-
-                        local a2 = rest[bestK-1]
-                        if bestK-1 < 1 do a2 = rest[rest.count]
-                        local b2 = rest[bestK]
-                        local c2 = rest[bestK+1]
-                        if bestK+1 > rest.count do c2 = rest[1]
-
-                        append tris #(a2, b2, c2)
-                        deleteItem rest bestK
-                    )
-                )
-            )
-        )
-    )
-
-    tris
+    sp
 )
 
--- ============================================================================
--- LA DALLE : contour offset -> dessus (normal haut) + dessous (normal bas)
--- + tranche périphérique. AUCUN contour intérieur.
--- ============================================================================
-fn T_Slab O z0 th mat =
-(
-    local n = O.count
-
-    format "T-SLAB: O=% sommets z0=% epaisseur=%\n" n z0 th
-
-    for k = 1 to n do
-        format "T-SLAB: O[%]=%\n" k O[k]
-
-    if n < 3 or th <= 0.001 do
-    (
-        format "T-SLAB ANNULE: garde echouee\n"
-        undefined
-    )
-    else
-    (
-        local zTop = z0 + th
-
-        -- dessus et dessous : 2 jeux de sommets (n chacun)
-        local vArr = #()
-
-        for k = 1 to n do append vArr [O[k].x, O[k].y, z0]    -- 1..n   : dessous
-        for k = 1 to n do append vArr [O[k].x, O[k].y, zTop]  -- n+1..2n: dessus
-
-        local fTop = #()
-        local fBot = #()
-        local fSide = #()
-
-        local tris = T_Triangulate O
-
-        format "T-SLAB: triangulation: % triangles\n" tris.count
-
-        for t in tris do
-        (
-            -- dessus : normal vers le HAUT
-            append fTop [n + t[1], n + t[2], n + t[3]]
-            -- dessous : normal vers le BAS
-            append fBot [t[1], t[3], t[2]]
-        )
-
-        -- tranche : normales vers l'EXTÉRIEUR
-        for k = 1 to n do
-        (
-            local k2 = k + 1
-            if k2 > n do k2 = 1
-
-            append fSide [k, k2, k2 + n]
-            append fSide [k, k2 + n, k + n]
-        )
-
-        format "T-SLAB: faces dessus=% dessous=% tranche=%\n" fTop.count fBot.count fSide.count
-
-        -- 3 meshes séparés colorés : dessus VERT, dessous VIOLET, tranche ROUGE
-        local mT = mesh name:"TEST_dessus"  vertices:vArr faces:fTop  material:(standardMaterial name:"TEST_m_dessus"  diffuse:(color 60 200 60))
-        local mB = mesh name:"TEST_dessous" vertices:vArr faces:fBot  material:(standardMaterial name:"TEST_m_dessous" diffuse:(color 150 60 200))
-        local mS = mesh name:"TEST_tranche" vertices:vArr faces:fSide material:(standardMaterial name:"TEST_m_tranche" diffuse:(color 200 60 60))
-
-        update mT
-        update mB
-        update mS
-
-        for m in #(mT, mB, mS) do
-        (
-            if (classof m) == Editable_mesh do convertToPoly m
-            if (classof m) == Editable_Poly do polyop.setFaceSmoothGroup m #{1..(polyop.getNumFaces m)} 0
-            append FR_TESTSLAB_Pool m
-        )
-
-        format "T-SLAB: mesh cree OK (3 objets)\n"
-
-        mT
-    )
-)
-
-rollout FR_TESTSLAB "TEST SLAB (etape 1)"
+rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
 (
     pickbutton pbContour "Pick contour (spline fermee)" width:250
     button btRect "Rectangle test (20 x 10)" width:250
-    spinner spZ "Hauteur z: " range:[0,100,10.0] scale:0.1
-    spinner spOver "Outline exterieur (debord): " range:[0,5,0.5] scale:0.05
-    spinner spTh "Epaisseur extrusion: " range:[0.001,2,0.5] scale:0.05
-    button btBuild "CONSTRUIRE LA DALLE" width:250 height:36
+    spinner spOver "Outline exterieur: " range:[0,5,0.5] scale:0.05
+    spinner spTh "Extrusion (modif. natif): " range:[0.001,2,0.5] scale:0.05
+    button btBuild "OUTLINE + EXTRUDE" width:250 height:36
     button btClear "Effacer les objets du test" width:250
-    label lbInfo "F11 = Listener : lignes T-SLAB"
+    label lbInfo "F11 = Listener : lignes T-OUT"
 
     local contourNode = undefined
 
@@ -397,13 +204,14 @@ rollout FR_TESTSLAB "TEST SLAB (etape 1)"
         ClearAll()
 
         local sp = splineShape pos:[0,0,0]
-        addSpline sp #([0,0,0],[20,0,0],[20,10,0],[0,10,0])
-        close sp 1
+        local si = addNewSpline sp
+        for p in #([0,0,0],[20,0,0],[20,10,0],[0,10,0]) do addKnot sp si #corner #line p
+        close sp si
         update sp
 
         contourNode = sp
         pbContour.text = "Rectangle 20x10 (auto)"
-        format "T-SLAB: rectangle cree (4 sommets)\n"
+        format "T-OUT: rectangle cree (4 sommets)\n"
     )
 
     on pbContour picked obj do
@@ -427,19 +235,28 @@ rollout FR_TESTSLAB "TEST SLAB (etape 1)"
 
             local pts = for k = 1 to (numKnots contourNode 1) collect (in coordsys world (getKnotPoint contourNode 1 k))
 
-            format "T-SLAB: contour % sommets\n" pts.count
-            for k = 1 to pts.count do format "T-SLAB: pts[%]=%\n" k pts[k]
+            format "T-OUT: contour % sommets\n" pts.count
+            for k = 1 to pts.count do format "T-OUT: pts[%]=%\n" k pts[k]
 
+            -- 1) outline vers l'exterieur
             local O = T_OffsetContour pts spOver.value
 
-            format "T-SLAB: O=% sommets\n" O.count
+            format "T-OUT: outline O=% sommets\n" O.count
+            for k = 1 to O.count do format "T-OUT: O[%]=%\n" k O[k]
 
-            local slab = T_Slab O spZ.value spTh.value undefined
+            -- 2) spline VISIBLE de l'outline (rouge) + copie du contour d'origine (blanc)
+            local spO = T_PtsToSpline O "TEST_outline" (color 255 30 30)
+            local spC = T_PtsToSpline (T_PolyCCW pts) "TEST_contour_origine" (color 255 255 255)
 
-            if slab == undefined then
-                messageBox "DALLE ANNULEE — regardez les lignes T-SLAB dans le Listener (F11)."
-            else
-                messageBox "DALLE construite : dessus VERT, dessous VIOLET, tranche ROUGE.\nDetail dans le Listener (F11)."
+            -- 3) Extrude NATIF de Max sur l'outline (exactement la manip manuelle)
+            select spO
+            modPanel.addModToSelection (Extrude()) ui:on
+            spO.modifiers[#Extrude].amount = spTh.value
+
+            format "T-OUT: Extrude natif applique, amount=%\n" spTh.value
+            format "T-OUT: TERMINE — spline rouge = outline, blanche = contour d'origine\n"
+
+            messageBox ("Outline cree : " + (O.count as string) + " sommets.\nSpline ROUGE = outline + Extrude natif (" + (spTh.value as string) + " m).\nSpline BLANCHE = contour d'origine.\nDetail dans le Listener (F11).")
         )
     )
 
