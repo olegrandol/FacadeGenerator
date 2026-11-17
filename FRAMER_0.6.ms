@@ -1,7 +1,31 @@
 /*
-    FRAMER 0.6.14
+    FRAMER 0.6.15
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    CORRIGÉ EN 0.6.15 :
+    - TOIT TERRASSE EN MODE CONTOUR : « mauvaise triangulation » — dalle
+      géante inclinée, détachée du bâtiment, avec des arêtes partant en
+      biais dans le vide. Deux causes traitées :
+      1) CONTOUR PARCOURU EN SENS HORAIRE : la triangulation (ear clipping)
+         suppose des sommets anti-horaires ; en sens horaire aucun sommet
+         convexe n'est détecté, le repli « clipping forcé » produisait des
+         triangles en vrille, et le décalage du débord partait vers
+         l'INTÉRIEUR au lieu de l'extérieur. L'orientation des polygones est
+         désormais normalisée partout (FR_PolyArea / FR_PolyCCW : aire
+         signée, inversion si nécessaire) — la triangulation, le décalage
+         du débord, la dalle, le fond et les versants ne dépendent plus du
+         sens dans lequel le contour a été dessiné.
+      2) TRIANGLES IMPOSSIBLES : sur un contour décalé auto-intersecté
+         (formes très concaves), le repli pouvait encore produire un
+         triangle plus grand que le polygone lui-même — il est désormais
+         détecté (aire du triangle vs aire du polygone) et sauté (trou
+         local préférable à une dalle hors du bâtiment). Avant le repli
+         aveugle, une oreille « assouplie » (sommets presque plats) est
+         tentée avec la contenance vérifiée.
+      3) L'appel toit du mode contour est passé dans le try/catch avec
+         nettoyage du pool : une erreur pendant le toit ne laisse plus de
+         dalle orpheline non parentée dans la scène.
 
     CORRIGÉ EN 0.6.14 :
     - CRASH AU CHARGEMENT DES ANCIENS PRESETS (FRAMER_PARAMS=6/9, d'avant
@@ -479,6 +503,8 @@ struct FRParams
    ces globals.
 --------------------------------------------------------------------- */
 global FR_Pt, FR_Prisma, FR_SweepMesh, FR_ArchWall, FR_ArchGlazing, FR_ReadProfile, FR_RidgeCap
+-- 0.6.15 : FR_PolyArea / FR_PolyCCW (orientation des contours de toit)
+global FR_PolyArea, FR_PolyCCW
 
 fn FR_Msg txt =
 (
@@ -1891,12 +1917,55 @@ fn FR_InTri p a b c =
     ((d1.z >= 0.0) and (d2.z >= 0.0) and (d3.z >= 0.0)) or ((d1.z <= 0.0) and (d2.z <= 0.0) and (d3.z <= 0.0))
 )
 
+-- aire signée d'un polygone planaire XY (formule du lacet).
+-- > 0 : sommets anti-horaires ; < 0 : horaires. 0 : plat ou dégénéré.
+fn FR_PolyArea pts =
+(
+    local a = 0.0
+    local n = pts.count
+
+    if n >= 3 do
+    (
+        for k = 1 to n do
+        (
+            local k2 = k + 1
+            if k2 > n do k2 = 1
+
+            a += pts[k].x * pts[k2].y - pts[k2].x * pts[k].y
+        )
+
+        a /= 2.0
+    )
+
+    a
+)
+
+-- renvoie une COPIE du polygone en ordre ANTI-HORAIRE (inversée si nécessaire).
+-- 0.6.15 : un contour dessiné (ou stocké) dans le sens HORAIRE faisait échouer
+-- la détection d'oreilles (cross z > 0 jamais vrai) et basculait dans le repli
+-- « clipping forcé » -> triangles en vrille = dalle géante inclinée hors du bâtiment.
+fn FR_PolyCCW pts =
+(
+    local out = #()
+
+    if (FR_PolyArea pts) < 0.0 then
+        for k = pts.count to 1 by -1 do append out pts[k]
+    else
+        for k = 1 to pts.count do append out pts[k]
+
+    out
+)
+
 -- triangulation d'un polygone planaire (découpe d'oreilles, contour anti-horaire)
 -- 0.6.8 : l'oreille est le sommet DU MILIEU b -> on supprime b (avant : supprimait a,
 -- d'où chevauchements puis blocage sur un résidu horaire = TROU au milieu de la dalle)
+-- 0.6.15 : l'orientation est normalisée ici (FR_PolyCCW), le sens de parcours du
+-- contour n'a plus d'influence sur le résultat.
 fn FR_Triangulate pts =
 (
     local tris = #()
+
+    pts = FR_PolyCCW pts
 
     if pts.count >= 3 do
     (
@@ -1951,8 +2020,46 @@ fn FR_Triangulate pts =
                 )
                 else
                 (
+                    -- 0.6.15 : avant le clipping forcé, on retente une oreille avec un
+                    -- test ASSOULI (sommets presque plats acceptés, cross z >= -1e-6)
+                    -- et la contenance vérifiée — sur un polygone décalé auto-intersecté,
+                    -- le clipping aveugle produisait des triangles en vrille.
+                    local relaxed = false
+
+                    for k = 1 to rest.count while not relaxed do
+                    (
+                        local k2 = k + 1
+                        if k2 > rest.count do k2 = 1
+
+                        local k3 = k2 + 1
+                        if k3 > rest.count do k3 = 1
+
+                        local a = rest[k]
+                        local b = rest[k2]
+                        local c = rest[k3]
+
+                        if (cross (pts[b]-pts[a]) (pts[c]-pts[b])).z >= -0.000001 do
+                        (
+                            local empty = true
+
+                            for m in rest while empty do
+                            (
+                                if m != a and m != b and m != c and (FR_InTri pts[m] pts[a] pts[b] pts[c]) do empty = false
+                            )
+
+                            if empty do
+                            (
+                                append tris #(a, b, c)
+                                deleteItem rest k2
+                                relaxed = true
+                            )
+                        )
+                    )
+
                     -- sinon : clipping forcé du sommet au cross le plus convexe,
                     -- pour garantir la terminaison et la couverture complète
+                    if not relaxed do
+                    (
                     local bestC = -1.0
                     local bestK = 1
 
@@ -1978,6 +2085,7 @@ fn FR_Triangulate pts =
 
                     append tris #(a2, b2, c2)
                     deleteItem rest bestK
+                    )
                 )
             )
         )
@@ -1987,9 +2095,17 @@ fn FR_Triangulate pts =
 )
 
 -- dalle de la terrasse sur le contour : polygone triangulé (dessus, dessous, tranche)
+-- 0.6.15 : orientation normalisée (FR_PolyCCW) + garde-fou : un triangle plus grand
+-- que le polygone lui-même est impossible dans une triangulation valide -> il vient
+-- d'un repli sur polygone décalé auto-intersecté, on le SAUTE (trou local préférable
+-- à la dalle géante inclinée hors du bâtiment).
 fn FR_RoofSlabContour p pts z0 th mat =
 (
+    pts = FR_PolyCCW pts
+
     local tris = FR_Triangulate pts
+
+    local totA = abs (FR_PolyArea pts)
 
     if tris.count > 0 do
     (
@@ -2009,8 +2125,14 @@ fn FR_RoofSlabContour p pts z0 th mat =
             local b = t[2]
             local c = t[3]
 
-            append fArr [a, c, b]
-            append fArr [a+n, b+n, c+n]
+            -- garde-fou triangulation : aire du triangle vs aire du polygone
+            local tA = abs ((pts[b].x - pts[a].x) * (pts[c].y - pts[a].y) - (pts[c].x - pts[a].x) * (pts[b].y - pts[a].y)) / 2.0
+
+            if totA <= 0.0 or tA <= totA * 1.01 do
+            (
+                append fArr [a, c, b]
+                append fArr [a+n, b+n, c+n]
+            )
         )
 
         for k = 1 to n do
@@ -2038,8 +2160,12 @@ fn FR_RoofSlabContour p pts z0 th mat =
 
 -- décalage d'un contour fermé vers l'EXTÉRIEUR (contour anti-horaire : l'extérieur est à droite)
 -- jonctions en mitre, bridées pour les angles très aigus (limité à ~3x le décalage)
+-- 0.6.15 : le contour est normalisé en anti-horaire d'abord — un contour parcouru
+-- dans le sens horaire était décalé vers l'INTÉRIEUR (débord inversé, dalle trop petite).
 fn FR_OffsetContour pts d =
 (
+    pts = FR_PolyCCW pts
+
     local n = pts.count
     local out = #()
 
@@ -2087,9 +2213,14 @@ fn FR_OffsetContour pts d =
 )
 
 -- fond horizontal fermé (vu d'en dessous) : polygone triangulé posé à la hauteur z, normales vers le bas
+-- 0.6.15 : orientation normalisée + garde-fou triangles géants (cf. FR_RoofSlabContour)
 fn FR_RoofCapContour p pts z mat =
 (
+    pts = FR_PolyCCW pts
+
     local tris = FR_Triangulate pts
+
+    local totA = abs (FR_PolyArea pts)
 
     if tris.count > 0 do
     (
@@ -2100,7 +2231,16 @@ fn FR_RoofCapContour p pts z mat =
         for k = 1 to n do append vArr [pts[k].x, pts[k].y, z]
 
         -- triangulation anti-horaire (normale vers le haut) -> inversée pour regarder vers le bas
-        for t in tris do append fArr [t[1], t[3], t[2]]
+        for t in tris do
+        (
+            local a = t[1]
+            local b = t[2]
+            local c = t[3]
+
+            local tA = abs ((pts[b].x - pts[a].x) * (pts[c].y - pts[a].y) - (pts[c].x - pts[a].x) * (pts[b].y - pts[a].y)) / 2.0
+
+            if totA <= 0.0 or tA <= totA * 1.01 do append fArr [a, c, b]
+        )
 
         local m = mesh vertices:vArr faces:fArr
 
@@ -3308,7 +3448,23 @@ fn FR_BuildContour pts segPRs root doMerge =
         )
 
         -- toit du contour (terrasse : polygone exact ; pentes : rectangle englobant)
-        if ok and PR0.roofMode != "None" do FR_RoofContour pts segPRs bases totalH
+        -- 0.6.15 : l'appel toit est DANS un try/catch avec nettoyage du pool — avant,
+        -- une erreur pendant le toit laissait la dalle fraîchement créée non parentée
+        -- (dalle orpheline flottant dans la scène jusqu'au nettoyage suivant).
+        if ok and PR0.roofMode != "None" do
+        (
+            try
+            (
+                FR_RoofContour pts segPRs bases totalH
+            )
+            catch
+            (
+                for n in FR_Pool do ( if isValidNode n do delete n )
+                FR_Pool = #()
+                FR_Ctx = ""
+                throw()
+            )
+        )
 
         if ok do
         (
@@ -3786,7 +3942,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.14" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -4867,8 +5023,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.14" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.14 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.14")
+                "FRAMER | Générateur de façades 0.6.15 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.15")
         )
         catch()
 

@@ -28,6 +28,21 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.15
+
+- **Corrigé : « mauvaise triangulation » du toit-terrasse en mode contour**
+  (dalle géante inclinée, détachée du bâtiment, arêtes partant en biais dans
+  le vide) :
+  - un contour dessiné (ou stocké) dans le sens **horaire** faisait échouer la
+    triangulation (ear clipping) et inversait le décalage du débord —
+    l'orientation des polygones est désormais **normalisée automatiquement**
+    (aire signée) : la dalle, le fond, les versants et le débord ne dépendent
+    plus du sens de dessin du contour ;
+  - sur un contour décalé auto-intersecté (formes très concaves), un triangle
+    **plus grand que le polygone lui-même** est désormais détecté et sauté ;
+  - une erreur pendant le toit ne laisse plus de dalle orpheline dans la scène
+    (nettoyage immédiat).
+
 ## Version 0.6.14
 
 - **Corrigé : crash au chargement des anciens presets** (FRAMER_PARAMS=6/9,
