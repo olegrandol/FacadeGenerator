@@ -287,7 +287,7 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
                 if (polyop.getFaceNormal o f).z > 0.9 do append topF f
             )
 
-            format "T-BAC2: poly=% faces=% faces dessus=% (%)\n" nf topF.count (topF as string)
+            format "T-BAC2: poly=% faces=% faces dessus=%\n" nf nf topF.count
 
             if topF.count == 0 then
                 messageBox "Aucune face du dessus trouvée — bizarre."
