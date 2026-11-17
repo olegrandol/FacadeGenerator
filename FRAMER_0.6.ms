@@ -2597,13 +2597,14 @@ fn FR_OffsetContour pts d =
 
     local out = FR_OffsetMitre pts d
     local dd = d
-    local try = 0
+    local nTry = 0
 
     -- valide = simple, et pour un décalage intérieur l'aire reste positive
     -- (un décalage trop fort inverse le polygone)
-    while try < 4 and not ((FR_PolySimple out) and (dd >= 0.0 or (FR_PolyArea out) > 0.0)) do
+    -- NOTE : compteur nommé nTry — « try » est un mot réservé MAXScript
+    while nTry < 4 and not ((FR_PolySimple out) and (dd >= 0.0 or (FR_PolyArea out) > 0.0)) do
     (
-        try = try + 1
+        nTry = nTry + 1
         dd /= 2.0
         out = FR_OffsetMitre pts dd
     )
@@ -2615,7 +2616,7 @@ fn FR_OffsetContour pts d =
         FR_Msg ("Décalage du toit impossible (contour trop étroit) : débord réduit à 0.")
         out = pts
     )
-    else if try > 0 do
+    else if nTry > 0 do
         FR_Msg ("Décalage du toit réduit à " + ((abs dd) as string) + " m (contour trop étroit pour la valeur demandée).")
 
     FR_DedupPts out
