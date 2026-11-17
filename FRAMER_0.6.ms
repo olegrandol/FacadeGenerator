@@ -2783,9 +2783,12 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
             FR_RoofFlatRect "FRAMER_Roof" bR W D totalH PR.roofOver PR.roofPar roofMat
         else if PR.roofMode == "Gable" then
             FR_RoofGableRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat pierMat
-        else if PR.roofMode == "Hip" do
+        -- NOTE : tout `else if` de cette chaîne doit utiliser `then` (jamais
+        -- `do`) : en MAXScript, une branche `if ... do` ne peut PAS être
+        -- suivie d'un `else` (sinon erreur « à else, attendu <facteur> »).
+        else if PR.roofMode == "Hip" then
             FR_RoofHipRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat
-        else if PR.roofMode == "Mansard" do
+        else if PR.roofMode == "Mansard" then
             FR_RoofMansardRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.mansP2 PR.roofOver PR.mansTop PR.roofPar roofMat
     )
 
