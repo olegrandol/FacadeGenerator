@@ -1,7 +1,19 @@
 /*
-    FRAMER 0.6.12
+    FRAMER 0.6.13
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.13 :
+    - COUVRE-JOINT DES TOITS EN PENTE (onglet Toit, « Couvre-joint
+      (faîtage) ») : un petit profil — TRIANGULAIRE (sec, moderne) ou
+      ARRONDI (tuile faîtière traditionnelle), largeur et hauteur
+      réglables — est posé le long des jonctions entre versants, là où les
+      dalles fines ne se rejoignent que par une arête vive avec un coin
+      creux en dessous : faîtage (deux pentes), faîtage + 4 arêtiers
+      (quatre pans), arêtes du plateau (mansard). Posé en géométrie
+      solide (pas de spline renderable) : fusionné dans le toit, supprimé
+      avec lui, cohérent avec le nettoyage mémoire. Enfoncé de la moitié
+      de sa course pour rester en contact avec les versants.
 
     NOUVEAU EN 0.6.12 :
     - NOMBRE DE PORTES RÉGLABLE dans le rdc « Alternance vitrine / porte » :
@@ -342,6 +354,7 @@ global FR_EntCodes = #("None","Center","Left","Right","Random")
 global FR_RailCodes = #("None","Glass","Bars","Solid","Lisse")
 global FR_CapCodes = #("None","Slab","Lam")
 global FR_RoofCodes = #("None","Flat","Gable","Hip","Mansard")
+global FR_RidgeCodes = #("None","Tri","Round")
 
 -- valeurs par étage du mode "indépendants" (globales : un local de rollout valait OK)
 global FR_gH = #(3.0)
@@ -425,6 +438,10 @@ struct FRParams
     -- terrasson (degrés) ; le brisis utilise la pente principale (roofPitch)
     mansTop = 2.0,
     mansP2 = 30.0,
+    -- couvre-joint des toits en pente (faîtage, arêtiers) : "None"/"Tri"/"Round"
+    ridgeMode = "None",
+    ridgeW = 0.18,
+    ridgeH = 0.10,
     -- un élément par étage d'élévation
     flH = #(),
     flMode = #(),
@@ -452,7 +469,7 @@ struct FRParams
    globals ici ; les définitions `fn ...` plus bas réaffectent bien
    ces globals.
 --------------------------------------------------------------------- */
-global FR_Pt, FR_Prisma, FR_SweepMesh, FR_ArchWall, FR_ArchGlazing, FR_ReadProfile
+global FR_Pt, FR_Prisma, FR_SweepMesh, FR_ArchWall, FR_ArchGlazing, FR_ReadProfile, FR_RidgeCap
 
 fn FR_Msg txt =
 (
@@ -552,7 +569,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=16\n" to:ss
+    format "FRAMER_PARAMS=19\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -612,6 +629,9 @@ fn FR_ParamsToString PR =
     format "roofDepth=%\n" (FR_F PR.roofDepth) to:ss
     format "mansTop=%\n" (FR_F PR.mansTop) to:ss
     format "mansP2=%\n" (FR_F PR.mansP2) to:ss
+    format "ridgeMode=%\n" PR.ridgeMode to:ss
+    format "ridgeW=%\n" (FR_F PR.ridgeW) to:ss
+    format "ridgeH=%\n" (FR_F PR.ridgeH) to:ss
     format "flH=%\n" (FR_JoinF PR.flH) to:ss
     format "flMode=%\n" (FR_JoinS PR.flMode) to:ss
     format "flWin=%\n" (FR_JoinF PR.flWin) to:ss
@@ -719,6 +739,9 @@ fn FR_ParamsFromString txt =
                 "roofDepth": PR.roofDepth = v as float
                 "mansTop": PR.mansTop = v as float
                 "mansP2": PR.mansP2 = v as float
+                "ridgeMode": PR.ridgeMode = v
+                "ridgeW": PR.ridgeW = v as float
+                "ridgeH": PR.ridgeH = v as float
                 "flH": PR.flH = for s in (filterString v ",") collect (s as float)
                 "flMode": PR.flMode = for s in (filterString v ",") collect s
                 "flWin": PR.flWin = for s in (filterString v ",") collect (s as float)
@@ -1645,7 +1668,79 @@ fn FR_RoofFlatRect p basis W D z0 over parH mat =
 )
 
 -- toit à deux pentes sur un rectangle : faîtage au milieu de v, pignons aux extrémités u
-fn FR_RoofGableRect p basis W D z0 pitch over matRoof matWall =
+-- couvre-joint (faîtage / arêtier) : petit profil balayé le long d'une
+-- jonction entre deux versants — triangulaire (faîtage sec) ou arrondi
+-- (tuile faîtière, demi-ellipse). A/B : extrémités MONDE de la ligne de
+-- jonction ; w/h : largeur/hauteur du profil ; s : enfoncement (la base
+-- descend sous la ligne pour rester en contact avec les versants, dont la
+-- surface s'écarte de la jonction) ; rnd : profil arrondi sinon triangle.
+-- NOTE : sin/cos MAXScript travaillent en DEGRÉS.
+fn FR_RidgeCap p A B w h s rnd mat =
+(
+    local ex = B - A
+    local len = length ex
+
+    if len > 0.01 and w > 0.01 and h > 0.005 do
+    (
+        ex = normalize ex
+
+        -- repère local : ey horizontal perpendiculaire au faîtage, ez « haut »
+        local ey = normalize (cross [0,0,1] ex)
+        local ez = normalize (cross ex ey)
+
+        -- profil (largeur, hauteur), anti-horaire vu depuis +ex
+        local prof = #()
+
+        if rnd then
+        (
+            for k = 0 to 6 do
+            (
+                local a = k * 30.0
+                append prof [(w/2) * cos a, (-s + h * sin a), 0]
+            )
+        )
+        else
+        (
+            append prof [-(w/2), -s, 0]
+            append prof [(w/2), -s, 0]
+            append prof [0.0, h - s, 0]
+        )
+
+        local n = prof.count
+        local vArr = #()
+        local fArr = #()
+
+        for k = 1 to n do append vArr (A + ey*prof[k].x + ez*prof[k].y)
+        for k = 1 to n do append vArr (B + ey*prof[k].x + ez*prof[k].y)
+
+        -- extrémités (éventails)
+        for k = 1 to n-2 do append fArr [1, k+2, k+1]
+        for k = 1 to n-2 do append fArr [n+1, n+k+2, n+k+1]
+
+        -- côtés
+        for k = 1 to n do
+        (
+            local k2 = k + 1
+            if k2 > n do k2 = 1
+
+            append fArr [k, n+k2, n+k]
+            append fArr [k, k2, n+k2]
+        )
+
+        local m = mesh vertices:vArr faces:fArr
+
+        update m
+        FR_NoSmooth m
+
+        m.name = p
+        m.material = mat
+        append FR_Pool m
+
+        m
+    )
+)
+
+fn FR_RoofGableRect p basis W D z0 pitch over matRoof matWall rk:"None" rw:0.18 rh:0.10 =
 (
     local th = 0.12
     local u1 = -over
@@ -1664,11 +1759,15 @@ fn FR_RoofGableRect p basis W D z0 pitch over matRoof matWall =
         -- pignons (murs triangulaires aux extrémités du bâtiment)
         FR_Prisma (p+"_GableL") #((FR_Pt basis 0.0 v1 z0), (FR_Pt basis 0.0 v2 z0), (FR_Pt basis 0.0 vm (z0+h))) matWall th
         FR_Prisma (p+"_GableR") #((FR_Pt basis W v1 z0), (FR_Pt basis W v2 z0), (FR_Pt basis W vm (z0+h))) matWall th
+
+        -- couvre-joint : faîtage
+        if rk != "None" do
+            FR_RidgeCap (p+"_Ridge") (FR_Pt basis u1 vm (z0+h)) (FR_Pt basis u2 vm (z0+h)) rw rh ((rw/2)*tan pitch) (rk == "Round") matRoof
     )
 )
 
 -- toit à quatre pans sur un rectangle : faîtage raccourci (pentes égales des 4 côtés)
-fn FR_RoofHipRect p basis W D z0 pitch over matRoof =
+fn FR_RoofHipRect p basis W D z0 pitch over matRoof rk:"None" rw:0.18 rh:0.10 =
 (
     local th = 0.12
     local u1 = -over
@@ -1686,6 +1785,18 @@ fn FR_RoofHipRect p basis W D z0 pitch over matRoof =
         FR_Prisma (p+"_Back") #((FR_Pt basis u2 v2 z0), (FR_Pt basis u1 v2 z0), (FR_Pt basis r1 vm (z0+h)), (FR_Pt basis r2 vm (z0+h))) matRoof th
         FR_Prisma (p+"_HipL") #((FR_Pt basis u1 v2 z0), (FR_Pt basis u1 v1 z0), (FR_Pt basis r1 vm (z0+h))) matRoof th
         FR_Prisma (p+"_HipR") #((FR_Pt basis u2 v1 z0), (FR_Pt basis u2 v2 z0), (FR_Pt basis r2 vm (z0+h))) matRoof th
+
+        -- couvre-joint : faîtage + 4 arêtiers (diagonales)
+        if rk != "None" do
+        (
+            local s = (rw/2) * tan pitch
+
+            FR_RidgeCap (p+"_Ridge") (FR_Pt basis r1 vm (z0+h)) (FR_Pt basis r2 vm (z0+h)) rw rh s (rk == "Round") matRoof
+            FR_RidgeCap (p+"_HipFL") (FR_Pt basis u1 v1 z0) (FR_Pt basis r1 vm (z0+h)) rw rh s (rk == "Round") matRoof
+            FR_RidgeCap (p+"_HipFR") (FR_Pt basis u2 v1 z0) (FR_Pt basis r2 vm (z0+h)) rw rh s (rk == "Round") matRoof
+            FR_RidgeCap (p+"_HipBL") (FR_Pt basis u1 v2 z0) (FR_Pt basis r1 vm (z0+h)) rw rh s (rk == "Round") matRoof
+            FR_RidgeCap (p+"_HipBR") (FR_Pt basis u2 v2 z0) (FR_Pt basis r2 vm (z0+h)) rw rh s (rk == "Round") matRoof
+        )
     )
 )
 
@@ -1694,7 +1805,7 @@ fn FR_RoofHipRect p basis W D z0 pitch over matRoof =
 -- + acrotère (roofPar) — les 4 côtés ont la même course horizontale, la
 -- plate-forme reste un rectangle (comme un toit à quatre pans à double
 -- rupture de pente)
-fn FR_RoofMansardRect p basis W D z0 pitch p2 over topW parH matRoof =
+fn FR_RoofMansardRect p basis W D z0 pitch p2 over topW parH matRoof rk:"None" rw:0.18 rh:0.10 =
 (
     local th = 0.12
     local u1 = -over
@@ -1745,6 +1856,17 @@ fn FR_RoofMansardRect p basis W D z0 pitch p2 over topW parH matRoof =
                 FR_LocalBox (p+"_ParB") ((fu1+fu2)/2) (fv2-0.075) (fz0+parH/2) (fu2-fu1) 0.15 parH basis matRoof
                 FR_LocalBox (p+"_ParL") (fu1+0.075) ((fv1+fv2)/2) (fz0+parH/2) 0.15 (fv2-fv1) parH basis matRoof
                 FR_LocalBox (p+"_ParR") (fu2-0.075) ((fv1+fv2)/2) (fz0+parH/2) 0.15 (fv2-fv1) parH basis matRoof
+            )
+
+            -- couvre-joint : les 4 arêtes du plateau (jonction terrasson/plateau)
+            if rk != "None" do
+            (
+                local s = (rw/2) * tan p2
+
+                FR_RidgeCap (p+"_CvF") (FR_Pt basis fu1 fv1 (fz0+0.2)) (FR_Pt basis fu2 fv1 (fz0+0.2)) rw rh s (rk == "Round") matRoof
+                FR_RidgeCap (p+"_CvB") (FR_Pt basis fu1 fv2 (fz0+0.2)) (FR_Pt basis fu2 fv2 (fz0+0.2)) rw rh s (rk == "Round") matRoof
+                FR_RidgeCap (p+"_CvL") (FR_Pt basis fu1 fv1 (fz0+0.2)) (FR_Pt basis fu1 fv2 (fz0+0.2)) rw rh s (rk == "Round") matRoof
+                FR_RidgeCap (p+"_CvR") (FR_Pt basis fu2 fv1 (fz0+0.2)) (FR_Pt basis fu2 fv2 (fz0+0.2)) rw rh s (rk == "Round") matRoof
             )
         )
     )
@@ -2782,14 +2904,14 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
         if PR.roofMode == "Flat" then
             FR_RoofFlatRect "FRAMER_Roof" bR W D totalH PR.roofOver PR.roofPar roofMat
         else if PR.roofMode == "Gable" then
-            FR_RoofGableRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat pierMat
+            FR_RoofGableRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat pierMat rk:PR.ridgeMode rw:PR.ridgeW rh:PR.ridgeH
         -- NOTE : tout `else if` de cette chaîne doit utiliser `then` (jamais
         -- `do`) : en MAXScript, une branche `if ... do` ne peut PAS être
         -- suivie d'un `else` (sinon erreur « à else, attendu <facteur> »).
         else if PR.roofMode == "Hip" then
-            FR_RoofHipRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat
+            FR_RoofHipRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat rk:PR.ridgeMode rw:PR.ridgeW rh:PR.ridgeH
         else if PR.roofMode == "Mansard" then
-            FR_RoofMansardRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.mansP2 PR.roofOver PR.mansTop PR.roofPar roofMat
+            FR_RoofMansardRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.mansP2 PR.roofOver PR.mansTop PR.roofPar roofMat rk:PR.ridgeMode rw:PR.ridgeW rh:PR.ridgeH
     )
 
     true
@@ -3655,7 +3777,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.12" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.13" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -3809,6 +3931,11 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.12" width:430
     spinner spMansP2 "" pos:[215,402] width:190 range:[5,60,30] type:#float scale:1 tooltip:"Pente douce du terrasson (haut du toit mansardé). Le brisis utilise la pente principale ci-dessus (à monter à 60-75° pour un vrai mansard)."
     label l_spMansTop "Largeur du toit plat (m) :" pos:[25,430] width:185 height:16
     spinner spMansTop "" pos:[215,428] width:190 range:[0.5,20,2] type:#float scale:0.1 tooltip:"Largeur du plateau plat au sommet du toit mansardé (entre les deux terrassons)."
+    dropdownList ddRidge "Couvre-joint (faîtage) :" pos:[25,456] width:380 items:#("Aucun","Triangulaire","Arrondi (tuile faîtière)") selection:1 tooltip:"Couvre la jonction entre les versants : faîtage (deux pentes), faîtage + 4 arêtiers (quatre pans), arêtes du plateau (mansard). Triangulaire : sec et moderne. Arrondi : tuile faîtière traditionnelle."
+    label l_spRidgeW "Largeur du couvre-joint :" pos:[25,506] width:185 height:16
+    spinner spRidgeW "" pos:[215,504] width:190 range:[0.05,1,0.18] type:#float scale:0.01 tooltip:"Largeur du couvre-joint posé sur les jonctions de versants."
+    label l_spRidgeH "Hauteur du couvre-joint :" pos:[25,532] width:185 height:16
+    spinner spRidgeH "" pos:[215,530] width:190 range:[0.02,0.5,0.10] type:#float scale:0.01 tooltip:"Hauteur du couvre-joint au-dessus de la jonction."
     label lbRoofHelp "Le toit part du contour décalé vers l'extérieur (débord), fond fermé vu de dessous. Terrasse : dalle + acrotère suivant le contour. Deux/quatre pans : faîtage sur le plus long segment, versants suivant le contour (footprints convexes recommandés ; pas de pignons maçonnés en mode contour). Un toit remplace la corniche." pos:[25,350] width:380 height:48
 
     /* ----- onglet 6 : Variation ----- */
@@ -4004,6 +4131,11 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.12" width:430
         spMansP2.visible = t5
         l_spMansTop.visible = t5
         spMansTop.visible = t5
+        ddRidge.visible = t5
+        l_spRidgeW.visible = t5
+        spRidgeW.visible = t5
+        l_spRidgeH.visible = t5
+        spRidgeH.visible = t5
         lbRoofHelp.visible = t5
 
         gb6.visible = t6
@@ -4153,6 +4285,14 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.12" width:430
         l_spMansP2.enabled = mans
         spMansTop.enabled = mans
         l_spMansTop.enabled = mans
+
+        -- le couvre-joint ne sert qu'aux toits avec versants
+        local ridged = (sloped or mans)
+        ddRidge.enabled = ridged
+        spRidgeW.enabled = ridged
+        l_spRidgeW.enabled = ridged
+        spRidgeH.enabled = ridged
+        l_spRidgeH.enabled = ridged
     )
 
     /* ----- interface <-> paramètres ----- */
@@ -4202,6 +4342,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.12" width:430
         PR.roofDepth = spRoofDepth.value
         PR.mansP2 = spMansP2.value
         PR.mansTop = spMansTop.value
+        PR.ridgeMode = FR_RidgeCodes[ddRidge.selection]
+        PR.ridgeW = spRidgeW.value
+        PR.ridgeH = spRidgeH.value
 
         PR.seedVal = spSeed.value
         PR.variation = spVar.value
@@ -4350,6 +4493,11 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.12" width:430
         spRoofDepth.value = PR.roofDepth
         spMansP2.value = PR.mansP2
         spMansTop.value = PR.mansTop
+        local ri2 = findItem FR_RidgeCodes PR.ridgeMode
+        if ri2 == 0 do ri2 = 1
+        ddRidge.selection = ri2
+        spRidgeW.value = PR.ridgeW
+        spRidgeH.value = PR.ridgeH
         UpdateRoofUI()
 
         -- valeurs "anciennes façades" : serviront à compléter les tableaux manquants
@@ -4709,8 +4857,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.12" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.12 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.12")
+                "FRAMER | Générateur de façades 0.6.13 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.13")
         )
         catch()
 
@@ -5199,6 +5347,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.12" width:430
                     PRk.roofDepth = PR1.roofDepth
                     PRk.mansTop = PR1.mansTop
                     PRk.mansP2 = PR1.mansP2
+                    PRk.ridgeMode = PR1.ridgeMode
+                    PRk.ridgeW = PR1.ridgeW
+                    PRk.ridgeH = PR1.ridgeH
 
                     -- horizontal : recalculé pour ce segment (même pas de travée)
                     PRk.width = widths[k]
@@ -5502,6 +5653,11 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.12" width:430
     on spMansP2 entered do FR_LiveTick()
     on spMansTop buttonup do FR_LiveTick()
     on spMansTop entered do FR_LiveTick()
+    on ddRidge selected i do FR_LiveTick()
+    on spRidgeW buttonup do FR_LiveTick()
+    on spRidgeW entered do FR_LiveTick()
+    on spRidgeH buttonup do FR_LiveTick()
+    on spRidgeH entered do FR_LiveTick()
 )
 
 createDialog FRAMER_UI

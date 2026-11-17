@@ -28,6 +28,15 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.13
+
+- **Couvre-joint des toits en pente** (onglet Toit) : un profil —
+  *Triangulaire* ou *Arrondi (tuile faîtière)*, largeur et hauteur
+  réglables — est posé le long des jonctions entre versants (faîtage,
+  arêtiers, arêtes du plateau du mansard), là où les dalles fines ne se
+  rejoignent que par une arête vive. Géométrie solide fusionnée dans le
+  toit (pas de spline renderable) : nettoyage mémoire garanti.
+
 ## Version 0.6.12
 
 - **Nombre de portes réglable** dans le rdc *Alternance vitrine / porte* :
