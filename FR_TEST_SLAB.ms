@@ -181,6 +181,28 @@ fn T_PtsToSpline pts nm col =
     sp
 )
 
+-- mesure le z du fond du bac : la face la plus proche du centre d'origine
+-- en XY (apres extrusion, les indices de faces changent)
+fn T_MesureFond o c0 =
+(
+    local best = 0
+    local bestD = 1e9
+    local nf = polyop.getNumFaces o
+
+    for f = 1 to nf do
+    (
+        local c = polyop.getFaceCenter o f
+        local d = sqrt ((c.x - c0.x)^2 + (c.y - c0.y)^2)
+        if d < bestD do
+        (
+            bestD = d
+            best = f
+        )
+    )
+
+    if best == 0 then 0.0 else (polyop.getFaceCenter o best).z
+)
+
 rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
 (
     pickbutton pbContour "Pick contour (spline fermee)" width:250
@@ -345,14 +367,36 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
                     messageBox "Faces du milieu introuvables après inset."
                 else
                 (
-                    -- extrusion négative du fond : polyop direct sur le poly
-                    -- de base (pas de modificateur, s'applique immédiatement)
-                    local zAv = (polyop.getFaceCenter o midF[1]).z
-                    polyop.extrudeFaces o (midF as bitArray) spExtr.value
-                    local zAp = (polyop.getFaceCenter o midF[1]).z
+                    -- extrusion négative du fond : 2 méthodes testées l'une
+                    -- après l'autre, la mesure du z du fond désigne celle qui mord
+                    local c0 = polyop.getFaceCenter o midF[1]
+                    local zAv = c0.z
+                    local zAtt = zAv + spExtr.value
+                    local fc0 = polyop.getNumFaces o
 
-                    format "T-BAC2: extrusion % — z fond avant=% apres=% (delta=%)\n" spExtr.value zAv zAp (zAp - zAv)
-                    format "T-BAC2: BAC TERMINE\n"
+                    -- ESSAI 1 : polyop.extrudeFaces direct
+                    polyop.extrudeFaces o (midF as bitArray) spExtr.value
+                    local zF = T_MesureFond o c0
+                    format "T-BAC2: essai 1 polyop.extrudeFaces % — faces % -> % z fond=% (attendu %)\n" spExtr.value fc0 (polyop.getNumFaces o) zF zAtt
+
+                    if (abs (zF - zAtt)) > 0.01 then
+                    (
+                        -- ESSAI 2 : interface EditablePoly (exemple officiel Autodesk :
+                        -- polyop.setFaceSelection puis o.extrudeFaces montant)
+                        polyop.setFaceSelection o (midF as bitArray)
+                        o.extrudeFaces spExtr.value
+                        zF = T_MesureFond o c0
+                        format "T-BAC2: essai 2 interface extrudeFaces — faces -> % z fond=% (attendu %)\n" (polyop.getNumFaces o) zF zAtt
+                    )
+
+                    if (abs (zF - zAtt)) > 0.01 then
+                        messageBox "L'extrusion du fond ne mord pas — colle les traces T-BAC2."
+                    else
+                    (
+                        format "T-BAC2: BAC TERMINE\n"
+                        messageBox "Bac construit (manip native Max) :\noutline + extrude + inset + extrude négatif.\nListener (F11) : lignes T-BAC2."
+                    )
+                )
 
                     messageBox "Bac construit (manip native Max) :\noutline + extrude + inset + extrude négatif.\nListener (F11) : lignes T-BAC2."
                 )
