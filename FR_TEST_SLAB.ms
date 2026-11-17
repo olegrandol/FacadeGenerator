@@ -187,7 +187,10 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
     button btRect "Rectangle test (20 x 10)" width:250
     spinner spOver "Outline exterieur: " range:[0,5,0.5] scale:0.05
     spinner spTh "Extrusion (modif. natif): " range:[0.001,2,0.5] scale:0.05
+    spinner spInset "Inset (epaisseur acrotere): " range:[0.01,2,0.3] scale:0.05
+    spinner spExtr "Extrusion face milieu (négatif = vers le bas): " range:[-2,-0.01,-0.4] scale:0.05
     button btBuild "OUTLINE + EXTRUDE" width:250 height:36
+    button btBac "ETAPE 2 : INSET + EXTRUDE BAS (bac)" width:250 height:36
     button btClear "Effacer les objets du test" width:250
     label lbInfo "F11 = Listener : lignes T-OUT"
 
@@ -257,6 +260,59 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
             format "T-OUT: TERMINE — spline rouge = outline, blanche = contour d'origine\n"
 
             messageBox ("Outline cree : " + (O.count as string) + " sommets.\nSpline ROUGE = outline + Extrude natif (" + (spTh.value as string) + " m).\nSpline BLANCHE = contour d'origine.\nDetail dans le Listener (F11).")
+        )
+    )
+
+    -- ETAPE 2 : sur la dalle existante (TEST_outline extrudée + convertie),
+    -- inset de l'épaisseur d'acrotère puis extrusion négative du fond
+    -- = EXACTEMENT la manip manuelle de l'utilisateur (macro Edit_Poly)
+    on btBac pressed do
+    (
+        local o = getNodeByName "TEST_outline"
+
+        if o == undefined then
+            messageBox "D'abord : OUTLINE + EXTRUDE (étape 1)."
+        else
+        (
+            -- aplatir la pile : spline + Extrude -> Editable Poly
+            select o
+            convertToPoly o
+
+            -- faces du DESSUS (normale +Z)
+            local topF = #()
+            local nf = polyop.getNumFaces o
+
+            for f = 1 to nf do
+            (
+                if (polyop.getFaceNormal o f).z > 0.9 do append topF f
+            )
+
+            format "T-BAC2: poly=% faces=% faces dessus=% (%)\n" nf topF.count (topF as string)
+
+            if topF.count == 0 then
+                messageBox "Aucune face du dessus trouvée — bizarre."
+            else
+            (
+                -- Edit_Poly : inset GROUPE puis extrusion négative (manip manuelle)
+                modPanel.addModToSelection (Edit_Poly()) ui:on
+                local ep = o.modifiers[#Edit_Poly]
+
+                ep.SetSelection #Face #{}
+                ep.Select #Face (topF as bitArray)
+                ep.SetOperation #Inset
+                ep.insetAmount = spInset.value
+                ep.Commit ()
+
+                format "T-BAC2: inset % commité\n" spInset.value
+
+                ep.SetOperation #ExtrudeFace
+                ep.extrudeFaceHeight = spExtr.value
+                ep.Commit ()
+
+                format "T-BAC2: extrusion % commitée — BAC TERMINE\n" spExtr.value
+
+                messageBox "Bac construit (manip native Max) :\noutline + extrude + inset + extrude négatif.\nListener (F11) : lignes T-BAC2."
+            )
         )
     )
 
