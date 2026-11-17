@@ -28,6 +28,30 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.25
+
+- **Bac d'acrotère par manip native (mode contour)** : le bac de terrasse est
+  construit exactement comme la manip manuelle de l'utilisateur, validée au
+  pas à pas avec le script de test `FR_TEST_SLAB.ms` (rectangle **et** forme
+  en L) : contour décalé du débord -> spline -> **Extrude natif** (hauteur
+  d'acrotère) -> **Edit_Poly** : `Inset` de l'épaisseur d'acrotère, puis
+  `ExtrudeFace` négatif du fond de la gorge. Conséquences :
+  - le pairing O/I n'est plus nécessaire : les **contours concaves** (forme en
+    L, décrochés) ont désormais l'acrotère complet au lieu de basculer en
+    « dalle simple » ;
+  - `FR_RoofBac` (mesh custom) reste en **repli** si la manip native échoue
+    (traces `FR_BAC-NATIF` dans le Listener : `OK faces=… fond=…`, ou la
+    raison de l'échec) ;
+  - mesure de contrôle intégrée : le fond de la gorge doit être à
+    `z0 + parapet - gorge` (tracé, sinon échec + repli).
+- Rappel des pièges MAXScript consignés au fil du diagnostic : `ep.Select` est
+  l'enregistrement de clic interactif (sans effet scripté) -> `ep.SetSelection`
+  ; `Edit_Poly` scripté exige `max modify mode` + `modPanel.setCurrentObject`
+  + `subobjectLevel = 4` avant `Commit` ; pas de `%` littéral dans une chaîne
+  `format` ; `getNodeByName` renvoie le plus ANCIEN objet homonyme (d'où les
+  doubles extrusions des tests — les scripts de test suppriment désormais
+  leurs homonymes avant création).
+
 ## Version 0.6.24
 
 - **Traçage Listener du toit en mode contour** : après plusieurs retours

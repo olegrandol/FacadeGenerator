@@ -1,7 +1,16 @@
 /*
-    FRAMER 0.6.24
+    FRAMER 0.6.25
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.25 :
+    - BAC D'ACROTÈRE PAR MANIP NATIVE (mode contour) : le bac de terrasse est
+      construit exactement comme la manip manuelle validée au pas à pas dans
+      FR_TEST_SLAB (rectangle + forme en L) : contour décalé -> spline ->
+      Extrude natif -> Edit_Poly (inset de l'épaisseur d'acrotère, puis
+      extrusion négative du fond de la gorge). Ne dépend PLUS du pairing O/I :
+      l'inset natif gère les contours concaves (forme en L) qui basculaient en
+      "dalle simple". FR_RoofBac (mesh custom) reste en repli.
 
     NOUVEAU EN 0.6.24 :
     - TRAÇAGE LISTENER du toit en mode contour (FR_TOIT-CONTOUR, FR_BANDES,
@@ -612,6 +621,8 @@ struct FRParams
    ces globals.
 --------------------------------------------------------------------- */
 global FR_Pt, FR_Prisma, FR_SweepMesh, FR_ArchWall, FR_ArchGlazing, FR_ReadProfile, FR_RidgeCap, FR_RoofBac
+-- 0.6.25 : bac d'acrotère par manip native (Extrude + Edit_Poly inset/extrude)
+global FR_RoofBacNative
 -- 0.6.16 : FR_RoofFlatRect (défini avant) appelle FR_OffsetContour/FR_RoofBac (définis après)
 global FR_OffsetContour
 -- 0.6.15 : FR_PolyArea / FR_PolyCCW (orientation des contours de toit)
@@ -2785,6 +2796,133 @@ fn FR_RoofBac p O I z0 pT gorge mat =
     )
 )
 
+-- 0.6.25 : bac d'acrotère par la MANIP NATIVE (validée au pas à pas dans
+-- FR_TEST_SLAB sur rectangle et forme en L) : spline du contour O -> Extrude
+-- natif (hauteur de l'acrotère) -> Edit_Poly : inset de l'épaisseur, puis
+-- extrusion négative du fond de la gorge. Ne dépend plus du pairing O/I :
+-- l'inset natif gère les contours concaves. O = contour extérieur (débord)
+-- anti-horaire, z0 = hauteur du toit, pT = hauteur d'acrotère, th = épaisseur
+-- (inset), gorge = profondeur du fond sous le sommet (fond à z0+pT-gorge).
+fn FR_RoofBacNative p O z0 pT th gorge mat =
+(
+    local n = O.count
+    local res = undefined
+
+    if n < 3 or pT <= 0.05 then
+        format "FR_BAC-NATIF ANNULE (%): O=% parapet=%\n" p n pT
+    else
+    (
+        -- la gorge ne peut pas descendre sous le dessous du bac
+        if gorge > pT - 0.05 do gorge = pT - 0.05
+
+        -- 1) spline fermée du contour, à la hauteur du toit
+        local sp = splineShape pos:[0,0,0]
+        local si = addNewSpline sp
+
+        for k = 1 to n do addKnot sp si #corner #line [O[k].x, O[k].y, z0]
+        close sp si
+        updateShape sp  -- (update = opération MESH ; sur une spline : updateShape)
+
+        -- 2) Extrude natif = hauteur de l'acrotère (manip manuelle)
+        select sp
+        modPanel.addModToSelection (Extrude()) ui:on
+        sp.modifiers[#Extrude].amount = pT
+
+        -- 3) cuire en Editable Poly
+        convertToPoly sp
+
+        -- 4) Edit_Poly : inset de l'épaisseur puis extrusion négative du fond.
+        --    Incantation complète OBLIGATOIRE en scripté : mode Modify +
+        --    modificateur COURANT du panneau + niveau sous-objet 4 (Face),
+        --    sinon SetOperation/Commit restent sans effet.
+        max modify mode
+        modPanel.addModToSelection (Edit_Poly()) ui:on
+        local ep = sp.modifiers[#Edit_Poly]
+        modPanel.setCurrentObject ep
+        subobjectLevel = 4
+
+        -- faces du DESSUS (normale +Z)
+        local topF = #()
+        local nf = polyop.getNumFaces sp
+
+        for f = 1 to nf do
+        (
+            if (polyop.getFaceNormal sp f).z > 0.9 do append topF f
+        )
+
+        if topF.count == 0 then
+            format "FR_BAC-NATIF: aucune face du dessus (%)\n" p
+        else
+        (
+            -- SetSelection (et NON Select : Select = enregistrement de clic)
+            ep.SetSelection #Face (topF as bitArray)
+            local selBA = ep.GetSelection #Face
+
+            if selBA.isEmpty then
+                format "FR_BAC-NATIF: selection refusée (%)\n" p
+            else
+            (
+                ep.SetOperation #Inset
+                ep.insetType = 0
+                ep.insetAmount = th
+                ep.Commit ()
+
+                format "FR_BAC-NATIF: inset % commité (%)\n" th p
+
+                -- après l'inset, la sélection du modificateur pointe le MILIEU
+                local midBA = ep.GetSelection #Face
+
+                if midBA.isEmpty then
+                    format "FR_BAC-NATIF: selection vide apres inset (%)\n" p
+                else
+                (
+                    ep.SetOperation #ExtrudeFace
+                    ep.extrudeFaceType = 0
+                    ep.extrudeFaceHeight = -gorge
+                    ep.Commit ()
+
+                    -- cuire l'Edit_Poly dans le poly de base
+                    convertToPoly sp
+
+                    -- mesure de contrôle : le fond doit être à z0+pT-gorge
+                    local zF = 1e9
+                    local nf2 = polyop.getNumFaces sp
+
+                    for f = 1 to nf2 do
+                    (
+                        if (polyop.getFaceNormal sp f).z > 0.9 do
+                        (
+                            local z = (polyop.getFaceCenter sp f).z
+                            if z < zF do zF = z
+                        )
+                    )
+
+                    if (abs (zF - (z0 + pT - gorge))) > 0.01 then
+                        format "FR_BAC-NATIF: fond=% attendu=% (%)- ECHEC\n" zF (z0 + pT - gorge) p
+                    else
+                    (
+                        FR_NoSmooth sp
+                        sp.name = p
+                        sp.material = mat
+
+                        append FR_Pool sp
+
+                        format "FR_BAC-NATIF: % OK faces=% fond=%\n" p (polyop.getNumFaces sp) zF
+                        res = sp
+                    )
+                )
+            )
+        )
+
+        subobjectLevel = 0
+
+        -- échec : ne rien laisser dans la scène (le repli FR_RoofBac prend le relais)
+        if res == undefined and isValidNode sp do delete sp
+    )
+
+    res
+)
+
 -- fond horizontal fermé (vu d'en dessous) : polygone triangulé posé à la hauteur z, normales vers le bas
 -- 0.6.15 : orientation normalisée + garde-fou triangles géants (cf. FR_RoofSlabContour)
 fn FR_RoofCapContour p pts z mat =
@@ -3004,21 +3142,29 @@ fn FR_RoofContour pts segPRs bases totalH =
         -- du contour décalé du débord (oPts). Plus de dalle + bandeaux séparés.
         if PR0.roofPar > 0.05 then
         (
-            local iPts = FR_OffsetContour oPts (-PR0.acrTh) dedup:false
+            -- 0.6.25 : bac par MANIP NATIVE (outline -> extrude -> inset ->
+            -- extrusion négative), validée au pas à pas (rectangle + L) ;
+            -- ne dépend plus du pairing O/I : les contours concaves (forme en L)
+            -- ont désormais l'acrotère au lieu de basculer en dalle simple
+            local bac = FR_RoofBacNative "FRAMER_Roof_Terrasse" oPts totalH PR0.roofPar PR0.acrTh PR0.acrGorge roofMat
 
-            -- 0.6.21 : si la pairing O/I est perdue, repli sur une dalle simple
-            -- (avant : bac silencieusement annulé -> sommet ouvert, acrotère flottant)
-            if iPts.count == oPts.count then
+            -- repli : mesh custom FR_RoofBac si la manip native échoue
+            if bac == undefined then
             (
-                local bac = FR_RoofBac "FRAMER_Roof_Terrasse" oPts iPts totalH PR0.roofPar PR0.acrGorge roofMat
+                local iPts = FR_OffsetContour oPts (-PR0.acrTh) dedup:false
 
-                if bac == undefined do
-                    FR_Msg ("Terrasse annulée : contour " + (oPts.count as string) + " sommets (intérieur " + (iPts.count as string) + "), acrotère " + (PR0.roofPar as string) + " m.")
-            )
-            else
-            (
-                FR_Msg "Terrasse : acrotère impossible (décalage intérieur désynchronisé) -> dalle simple."
-                FR_RoofSlabContour "FRAMER_Roof_Slab" oPts totalH 0.2 roofMat
+                if iPts.count == oPts.count then
+                (
+                    bac = FR_RoofBac "FRAMER_Roof_Terrasse" oPts iPts totalH PR0.roofPar PR0.acrGorge roofMat
+
+                    if bac == undefined do
+                        FR_Msg ("Terrasse annulée : contour " + (oPts.count as string) + " sommets (intérieur " + (iPts.count as string) + "), acrotère " + (PR0.roofPar as string) + " m.")
+                )
+                else
+                (
+                    FR_Msg "Terrasse : acrotère impossible (décalage intérieur désynchronisé) -> dalle simple."
+                    FR_RoofSlabContour "FRAMER_Roof_Slab" oPts totalH 0.2 roofMat
+                )
             )
         )
         else
@@ -4723,7 +4869,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.24" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.25" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -5868,8 +6014,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.24" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.24 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.24")
+                "FRAMER | Générateur de façades 0.6.25 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.25")
         )
         catch()
 
