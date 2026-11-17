@@ -28,6 +28,18 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.21
+
+- **Diagnostics toujours visibles** : `FR_Msg` était masqué en mode live
+  (`FR_Silent=true`) — les messages « toit annulé / décalage réduit »
+  n'apparaissaient jamais pendant les tests. Boîte de dialogue systématique.
+- **Acrotère / mansard en contour** : la déduplication des sommets dans
+  `FR_OffsetContour` pouvait désynchroniser la pairing contour
+  extérieur/intérieur — le bac (terrasse) et les bandes brisis/terrasson
+  étaient silencieusement annulés (sommet ouvert, plateau seul). Nouveau
+  kwarg `dedup:false` pour les paires de contours + replis automatiques
+  (dalle simple / 4 pans) avec message.
+
 ## Version 0.6.20
 
 - **Deux pans (mode contour) : pignons maçonnés** — murs triangulaires aux

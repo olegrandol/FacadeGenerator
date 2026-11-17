@@ -1,7 +1,19 @@
 /*
-    FRAMER 0.6.20
+    FRAMER 0.6.21
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    CORRIGÉ EN 0.6.21 :
+    - DIAGNOSTICS TOUJOURS VISIBLES : FR_Msg était masqué en mode live
+      (FR_Silent=true) — les messages « toit annulé / décalage réduit »
+      n'apparaissaient JAMAIS pendant les tests. C'est désormais une
+      boîte de dialogue systématique.
+    - ACROTÈRE / MANSARD CONTOUR : FR_OffsetContour peut retirer des sommets
+      confondus (déduplication) et désynchroniser la pairing contour
+      extérieur/contour intérieur — le bac et les bandes brisis/terrasson
+      étaient alors silencieusement annulés (sommet ouvert, plateau seul).
+      Nouveau kwarg dedup:false pour les paires de contours + repli automatique
+      (dalle simple pour la terrasse, 4 pans pour le mansard) avec message.
 
     NOUVEAU EN 0.6.20 (toits du mode contour) :
     - DEUX PANS : pignons maçonnés ajoutés (murs triangulaires aux extrémités
@@ -582,7 +594,10 @@ global FR_PolyArea, FR_PolyCCW
 
 fn FR_Msg txt =
 (
-    if not FR_Silent do messageBox (FR_Ctx + txt)
+    -- 0.6.21 : toujours affiché — les diagnostics (toit annulé, décalage réduit)
+    -- étaient masqués en mode live (FR_Silent=true) et l'utilisateur ne les
+    -- voyait JAMAIS, ce qui rendait les bugs indiagnosables.
+    messageBox (FR_Ctx + txt)
 )
 
 -- arêtes vives : aucun groupe de lissage sur les faces (rendu facetté)
@@ -2605,7 +2620,10 @@ fn FR_DedupPts pts =
 -- (spikes qui se replient) — c'est ce qui produisait les triangles en vrille du
 -- toit. Le résultat est donc vérifié (polygone simple + aire cohérente) et en
 -- cas d'échec le décalage est réduit de moitié, plusieurs fois si nécessaire.
-fn FR_OffsetContour pts d =
+-- 0.6.21 : kwarg dedup — false pour les paires de contours (bac, brisis/terrasson)
+-- où le NOMBRE de sommets doit rester identique au modèle (FR_DedupPts peut retirer
+-- des sommets confondus et désynchroniser la pairing O/I -> bandes non construites)
+fn FR_OffsetContour pts d dedup:true =
 (
     pts = FR_PolyCCW pts
 
@@ -2635,7 +2653,7 @@ fn FR_OffsetContour pts d =
     else if nTry > 0 do
         FR_Msg ("Décalage du toit réduit à " + ((abs dd) as string) + " m (contour trop étroit pour la valeur demandée).")
 
-    FR_DedupPts out
+    if dedup then FR_DedupPts out else out
 )
 
 -- terrasse « EN BAC » (0.6.16, d'après la manip utilisateur extrude + inset +
@@ -2936,13 +2954,22 @@ fn FR_RoofContour pts segPRs bases totalH =
         -- du contour décalé du débord (oPts). Plus de dalle + bandeaux séparés.
         if PR0.roofPar > 0.05 then
         (
-            local iPts = FR_OffsetContour oPts (-PR0.acrTh)
+            local iPts = FR_OffsetContour oPts (-PR0.acrTh) dedup:false
 
-            local bac = FR_RoofBac "FRAMER_Roof_Terrasse" oPts iPts totalH PR0.roofPar PR0.acrGorge roofMat
+            -- 0.6.21 : si la pairing O/I est perdue, repli sur une dalle simple
+            -- (avant : bac silencieusement annulé -> sommet ouvert, acrotère flottant)
+            if iPts.count == oPts.count then
+            (
+                local bac = FR_RoofBac "FRAMER_Roof_Terrasse" oPts iPts totalH PR0.roofPar PR0.acrGorge roofMat
 
-            -- diagnostic 0.6.18 : prévenir si le bac n'a pas pu être construit
-            if bac == undefined do
-                FR_Msg ("Terrasse annulée : contour " + (oPts.count as string) + " sommets (intérieur " + (iPts.count as string) + "), acrotère " + (PR0.roofPar as string) + " m.")
+                if bac == undefined do
+                    FR_Msg ("Terrasse annulée : contour " + (oPts.count as string) + " sommets (intérieur " + (iPts.count as string) + "), acrotère " + (PR0.roofPar as string) + " m.")
+            )
+            else
+            (
+                FR_Msg "Terrasse : acrotère impossible (décalage intérieur désynchronisé) -> dalle simple."
+                FR_RoofSlabContour "FRAMER_Roof_Slab" oPts totalH 0.2 roofMat
+            )
         )
         else
             -- pas d'acrotère : simple dalle sur le contour décalé
@@ -3064,8 +3091,9 @@ fn FR_RoofContour pts segPRs bases totalH =
 
         if h1 > 0.05 then
         (
-            local i1 = FR_OffsetContour oPts (-r1)
-            local i2 = FR_OffsetContour oPts (-t1)
+            -- dedup:false : pairing O/I obligatoire pour les bandes
+            local i1 = FR_OffsetContour oPts (-r1) dedup:false
+            local i2 = FR_OffsetContour oPts (-t1) dedup:false
 
             if i1.count == oPts.count and i2.count == oPts.count then
             (
@@ -3079,14 +3107,30 @@ fn FR_RoofContour pts segPRs bases totalH =
 
                 if PR0.roofPar > 0.05 do
                 (
-                    local i3 = FR_OffsetContour i2 (-PR0.roofPar)
+                    local i3 = FR_OffsetContour i2 (-PR0.roofPar) dedup:false
 
                     if i3.count == i2.count do
                         FR_RoofBac "FRAMER_Roof_Parapet" i2 i3 (zP + 0.2) PR0.roofPar (PR0.roofPar - 0.05) roofMat
                 )
             )
             else
-                FR_Msg "Mansard annulé : décalage du contour impossible (forme trop étroite ou trop concave pour le brisis/terrasson)."
+            (
+                -- 0.6.21 : repli 4 pans (au moins un toit) + message visible
+                FR_Msg "Mansard : brisis/terrasson impossibles (décalage intérieur désynchronisé) -> repli 4 pans."
+
+                local uMin = 0.0
+                local uMax = 0.0
+
+                for q in oPts do
+                (
+                    local du = dot (q - p1) ex
+
+                    if du < uMin do uMin = du
+                    if du > uMax do uMax = du
+                )
+
+                FR_RoofSlopesContour "FRAMER_Roof" oPts ex inw p1 uMin uMax wMin wMax PR0.roofPitch true roofMat totalH
+            )
         )
         else
             FR_Msg "Mansard annulé : hauteur de brisis nulle (pente trop faible ou plateau trop large pour la profondeur)."
@@ -4589,7 +4633,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.20" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.21" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -5734,8 +5778,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.20" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.20 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.20")
+                "FRAMER | Générateur de façades 0.6.21 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.21")
         )
         catch()
 
