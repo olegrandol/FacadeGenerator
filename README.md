@@ -28,6 +28,14 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.19
+
+- **Toits en pente du mode contour « dans le bâtiment »** : les versants
+  (2 pans, 4 pans, mansard) étaient construits à partir du niveau 0 du
+  contour (le sol) au lieu du sommet des murs — le toit se retrouvait DANS
+  le volume. La hauteur totale est désormais passée à
+  `FR_RoofSlopesContour` : les versants partent du niveau de l'égout.
+
 ## Version 0.6.18
 
 - **Toit du mode contour (formes en L, contours concaves)** : le décalage du

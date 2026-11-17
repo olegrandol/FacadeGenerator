@@ -1,7 +1,14 @@
 /*
-    FRAMER 0.6.18
+    FRAMER 0.6.19
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    CORRIGÉ EN 0.6.19 :
+    - TOITS EN PENTE DU MODE CONTOUR « DANS LE BÂTIMENT » : les versants
+      (2 pans, 4 pans, mansard) étaient construits à partir du niveau 0 du
+      contour (le sol) au lieu du sommet des murs — le toit se retrouvait
+      DANS le volume. La hauteur totale est désormais passée à
+      FR_RoofSlopesContour : les versants partent du niveau de l'égout.
 
     CORRIGÉ EN 0.6.18 :
     - TOIT DU MODE CONTOUR (formes en L et contours concaves) : le décalage
@@ -2809,7 +2816,10 @@ fn FR_SplitGE pts nx ny c =
 -- et, pour les croupes, par les diagonales à 45° partant des extrémités du faîtage.
 -- Chaque cellule devient un prisme (FR_Prisma) ; les arêtes de coupe sont donc exactes.
 -- Footprints convexes recommandés (les formes très concaves peuvent mal se découper).
-fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat =
+-- 0.6.19 : z0 = hauteur des murs — les versants partent du niveau de l'égout
+-- (avant, le z était relatif à p1 qui est au niveau 0 du contour : le toit se
+-- retrouvait DANS le bâtiment, à partir du sol)
+fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat z0 =
 (
     local th = 0.12
     local tanP = tan pitch
@@ -2862,7 +2872,7 @@ fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat =
                     local coord = if c[2] == 1 then q.x else q.y
                     local z = (c[4] * (coord - c[3])) * tanP
 
-                    append wpts (p1 + ex*q.x + inw*q.y + [0,0,z])
+                    append wpts (p1 + ex*q.x + inw*q.y + [0,0,z0 + z])
                 )
 
                 FR_Prisma (p + "_Pente") wpts mat th
@@ -2949,7 +2959,7 @@ fn FR_RoofContour pts segPRs bases totalH =
         FR_RoofCapContour "FRAMER_Roof_Cap" oPts totalH roofMat
 
         -- versants suivant le contour décalé (pignons maçonnés non générés en mode contour)
-        FR_RoofSlopesContour "FRAMER_Roof" oPts ex inw p1 uMin uMax wMin wMax PR0.roofPitch (PR0.roofMode == "Hip") roofMat
+        FR_RoofSlopesContour "FRAMER_Roof" oPts ex inw p1 uMin uMax wMin wMax PR0.roofPitch (PR0.roofMode == "Hip") roofMat totalH
     )
 )
 
@@ -4449,7 +4459,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.18" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.19" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -5594,8 +5604,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.18" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.18 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.18")
+                "FRAMER | Générateur de façades 0.6.19 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.19")
         )
         catch()
 
