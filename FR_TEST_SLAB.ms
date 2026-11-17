@@ -298,13 +298,21 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
                 local centers = for f in topF collect polyop.getFaceCenter o f
 
                 -- Edit_Poly n°1 : inset GROUPE (manip manuelle)
+                -- IMPORTANT : le panneau doit être en mode Modify, l'Edit_Poly
+                -- doit être l'objet COURANT du panneau et le niveau sous-objet
+                -- doit être 4 (Face), sinon Commit() ne s'applique pas
+                max modify mode
                 modPanel.addModToSelection (Edit_Poly()) ui:on
                 local ep = o.modifiers[#Edit_Poly]
+                modPanel.setCurrentObject ep
+                subobjectLevel = 4
 
                 -- SetSelection (et NON Select : Select = enregistrement de clic
                 -- interactif, sans effet en scripte)
                 ep.SetSelection #Face (topF as bitArray)
+                format "T-BAC2: selection dans Edit_Poly=%\n" ((ep.GetSelection #Face) as string)
                 ep.SetOperation #Inset
+                ep.insetType = 0
                 ep.insetAmount = spInset.value
                 ep.Commit ()
 
@@ -338,11 +346,16 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
                 else
                 (
                     -- Edit_Poly n°2 : extrusion négative du fond (manip manuelle)
+                    max modify mode
                     modPanel.addModToSelection (Edit_Poly()) ui:on
                     ep = o.modifiers[#Edit_Poly]
+                    modPanel.setCurrentObject ep
+                    subobjectLevel = 4
 
                     ep.SetSelection #Face (midF as bitArray)
+                    format "T-BAC2: selection extrude=%\n" ((ep.GetSelection #Face) as string)
                     ep.SetOperation #ExtrudeFace
+                    ep.extrudeFaceType = 0
                     ep.extrudeFaceHeight = spExtr.value
                     ep.Commit ()
 
