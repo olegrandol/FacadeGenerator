@@ -1,7 +1,21 @@
 /*
-    FRAMER 0.6.15
+    FRAMER 0.6.16
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.16 :
+    - TERRASSE « EN BAC » (toit-terrasse, façade simple ET mode contour) :
+      l'acrotère n'est plus un simple bandeau posé sur une dalle fine. Il est
+      construit comme la manipulation modélisée à la main : couronne PLEINE
+      (ÉPAISSEUR réglable, défaut 0,55) dépassant de la hauteur d'acrotère,
+      et plateau intérieur ENFONCÉ (GORGE INTÉRIEURE réglable, défaut 0,40)
+      — comme un vrai acrotère avec sa gorge. Solide unique (dessous fermé),
+      construit à partir du contour de base copié, translaté à la hauteur du
+      bâtiment et décalé vers l'extérieur du débord — le même socle que tous
+      les autres types de toits. Nouveaux réglages onglet Toit (actifs pour
+      la terrasse) : « Épaisseur de l'acrotère », « Gorge intérieure ».
+      Débord par défaut porté à 0,50. Enregistré dans les presets
+      (acrTh/acrGorge, FRAMER_PARAMS=21).
 
     CORRIGÉ EN 0.6.15 :
     - TOIT TERRASSE EN MODE CONTOUR : « mauvaise triangulation » — dalle
@@ -464,9 +478,13 @@ struct FRParams
     -- toit (commun à tout le bâtiment)
     roofMode = "None",
     roofPitch = 30.0,
-    roofOver = 0.4,
+    roofOver = 0.5,
     roofPar = 0.5,
     roofDepth = 8.0,
+    -- terrasse « en bac » (0.6.16) : épaisseur de la couronne d'acrotère et
+    -- creux intérieur (le plateau descend de cette valeur sous le sommet)
+    acrTh = 0.55,
+    acrGorge = 0.4,
     -- toit mansardé : largeur du plateau plat sommital (m) et pente du
     -- terrasson (degrés) ; le brisis utilise la pente principale (roofPitch)
     mansTop = 2.0,
@@ -502,7 +520,9 @@ struct FRParams
    globals ici ; les définitions `fn ...` plus bas réaffectent bien
    ces globals.
 --------------------------------------------------------------------- */
-global FR_Pt, FR_Prisma, FR_SweepMesh, FR_ArchWall, FR_ArchGlazing, FR_ReadProfile, FR_RidgeCap
+global FR_Pt, FR_Prisma, FR_SweepMesh, FR_ArchWall, FR_ArchGlazing, FR_ReadProfile, FR_RidgeCap, FR_RoofBac
+-- 0.6.16 : FR_RoofFlatRect (défini avant) appelle FR_OffsetContour/FR_RoofBac (définis après)
+global FR_OffsetContour
 -- 0.6.15 : FR_PolyArea / FR_PolyCCW (orientation des contours de toit)
 global FR_PolyArea, FR_PolyCCW
 
@@ -604,7 +624,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=19\n" to:ss
+    format "FRAMER_PARAMS=21\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -662,6 +682,8 @@ fn FR_ParamsToString PR =
     format "roofOver=%\n" (FR_F PR.roofOver) to:ss
     format "roofPar=%\n" (FR_F PR.roofPar) to:ss
     format "roofDepth=%\n" (FR_F PR.roofDepth) to:ss
+    format "acrTh=%\n" (FR_F PR.acrTh) to:ss
+    format "acrGorge=%\n" (FR_F PR.acrGorge) to:ss
     format "mansTop=%\n" (FR_F PR.mansTop) to:ss
     format "mansP2=%\n" (FR_F PR.mansP2) to:ss
     format "ridgeMode=%\n" PR.ridgeMode to:ss
@@ -772,6 +794,8 @@ fn FR_ParamsFromString txt =
                 "roofOver": PR.roofOver = v as float
                 "roofPar": PR.roofPar = v as float
                 "roofDepth": PR.roofDepth = v as float
+                "acrTh": PR.acrTh = v as float
+                "acrGorge": PR.acrGorge = v as float
                 "mansTop": PR.mansTop = v as float
                 "mansP2": PR.mansP2 = v as float
                 "ridgeMode": PR.ridgeMode = v
@@ -1686,19 +1710,37 @@ fn FR_Prisma p pts mat th =
 )
 
 -- toit-terrasse sur un rectangle (u 0..W, v 0..D dans le repère) : dalle + acrotère
-fn FR_RoofFlatRect p basis W D z0 over parH mat =
+-- toit-terrasse sur un rectangle — 0.6.16 : acrotère EN BAC, d'après la manip
+-- utilisateur (extrude hauteur + inset épaisseur + extrude négative = gorge) :
+-- une couronne PLEINE (épaisseur acrTh) dépasse de parH, le plateau intérieur
+-- descend de acrGorge sous le sommet de l'acrotère. Plus de bandeau posé sur
+-- une dalle fine : le bac est un solide unique.
+fn FR_RoofFlatRect p basis W D z0 over parH mat acrTh:0.55 acrGorge:0.4 =
 (
-    local slabT = 0.2
-    local parT = 0.2
+    local oW = W + over*2
+    local oD = D + over*2
 
-    FR_LocalBox (p+"_Slab") (W/2) (D/2) (z0 + slabT/2) (W + over*2) (D + over*2) slabT basis mat
-
-    if parH > 0.05 do
+    if parH < 0.05 then
+        FR_LocalBox (p+"_Slab") (W/2) (D/2) (z0 + 0.1) oW oD 0.2 basis mat
+    else
     (
-        FR_LocalBox (p+"_ParF") (W/2) (-over + parT/2) (z0 + parH/2) (W + over*2) parT parH basis mat
-        FR_LocalBox (p+"_ParB") (W/2) (D + over - parT/2) (z0 + parH/2) (W + over*2) parT parH basis mat
-        FR_LocalBox (p+"_ParL") (-over + parT/2) (D/2) (z0 + parH/2) parT (D + over*2) parH basis mat
-        FR_LocalBox (p+"_ParR") (W + over - parT/2) (D/2) (z0 + parH/2) parT (D + over*2) parH basis mat
+        -- épaisseur bornée pour que le polygone intérieur ne s'inverse pas
+        local th = acrTh
+        local maxTh = (amin #(oW, oD)) / 2.0 - 0.05
+        if th > maxTh do th = maxTh
+
+        -- contour extérieur du toit (le rectangle décalé du débord), anti-horaire
+        local O = #(
+            FR_Pt basis (-over) (-over) 0,
+            FR_Pt basis (W + over) (-over) 0,
+            FR_Pt basis (W + over) (D + over) 0,
+            FR_Pt basis (-over) (D + over) 0
+        )
+
+        -- contour intérieur = décalage vers l'INTÉRIEUR de l'épaisseur d'acrotère
+        local I = FR_OffsetContour O (-th)
+
+        FR_RoofBac p O I z0 parH acrGorge mat
     )
 )
 
@@ -2212,6 +2254,101 @@ fn FR_OffsetContour pts d =
     out
 )
 
+-- terrasse « EN BAC » (0.6.16, d'après la manip utilisateur extrude + inset +
+-- extrude négative) : O = polygone extérieur (contour décalé du débord),
+-- I = polygone intérieur (O décalé vers l'INTÉRIEUR de l'épaisseur d'acrotère,
+-- même nombre de sommets). Solide unique : couronne pleine de z0 à z0+pT
+-- (l'acrotère), plateau intérieur enfoncé — fond de la gorge à z0+pT-gorge —,
+-- dessous fermé vu de dessous. O et I doivent être anti-horaires.
+fn FR_RoofBac p O I z0 pT gorge mat =
+(
+    local n = O.count
+
+    if n >= 3 and I.count == n and pT > 0.05 do
+    (
+        -- la gorge ne peut pas descendre sous le dessous du bac
+        if gorge > pT - 0.05 do gorge = pT - 0.05
+
+        local zTop = z0 + pT
+        local zFlr = z0 + (pT - gorge)
+
+        local vArr = #()
+        local fArr = #()
+
+        -- 1..n : dessous extérieur ; n+1..2n : couronne extérieure (sommet) ;
+        -- 2n+1..3n : couronne intérieure (sommet) ; 3n+1..4n : fond de la gorge
+        for k = 1 to n do
+        (
+            append vArr [O[k].x, O[k].y, z0]
+            append vArr [O[k].x, O[k].y, zTop]
+            append vArr [I[k].x, I[k].y, zTop]
+            append vArr [I[k].x, I[k].y, zFlr]
+        )
+
+        local totA = abs (FR_PolyArea O)
+
+        for k = 1 to n do
+        (
+            local k2 = k + 1
+            if k2 > n do k2 = 1
+
+            -- paroi extérieure (normales vers l'extérieur)
+            append fArr [k, k2, k2+n]
+            append fArr [k, k2+n, k+n]
+
+            -- couronne supérieure (normales vers le haut)
+            append fArr [k+n, k2+n, k2+2*n]
+            append fArr [k+n, k2+2*n, k+2*n]
+
+            -- paroi intérieure de la gorge (normales vers le centre du bac)
+            append fArr [k+2*n, k2+3*n, k+3*n]
+            append fArr [k+2*n, k2+2*n, k2+3*n]
+        )
+
+        -- fond de la gorge (normales vers le haut) + garde-fou triangles impossibles
+        local tris = FR_Triangulate I
+
+        for t in tris do
+        (
+            local a = t[1]
+            local b = t[2]
+            local c = t[3]
+
+            local tA = abs ((I[b].x-I[a].x)*(I[c].y-I[a].y) - (I[c].x-I[a].x)*(I[b].y-I[a].y)) / 2.0
+
+            if totA <= 0.0 or tA <= totA * 1.01 do
+                append fArr [3*n+a, 3*n+b, 3*n+c]
+        )
+
+        -- dessous fermé (normales vers le bas) + même garde-fou
+        local tris2 = FR_Triangulate O
+
+        for t in tris2 do
+        (
+            local a = t[1]
+            local b = t[2]
+            local c = t[3]
+
+            local tA = abs ((O[b].x-O[a].x)*(O[c].y-O[a].y) - (O[c].x-O[a].x)*(O[b].y-O[a].y)) / 2.0
+
+            if totA <= 0.0 or tA <= totA * 1.01 do
+                append fArr [a, c, b]
+        )
+
+        local m = mesh vertices:vArr faces:fArr
+
+        update m
+        FR_NoSmooth m
+
+        m.name = p
+        m.material = mat
+
+        append FR_Pool m
+
+        m
+    )
+)
+
 -- fond horizontal fermé (vu d'en dessous) : polygone triangulé posé à la hauteur z, normales vers le bas
 -- 0.6.15 : orientation normalisée + garde-fou triangles géants (cf. FR_RoofSlabContour)
 fn FR_RoofCapContour p pts z mat =
@@ -2373,37 +2510,18 @@ fn FR_RoofContour pts segPRs bases totalH =
 
     if PR0.roofMode == "Flat" then
     (
-        -- dalle sur le contour décalé (le dessous de la dalle ferme la vue d'en dessous)
-        FR_RoofSlabContour "FRAMER_Roof_Slab" oPts totalH 0.2 roofMat
-
-        -- acrotère : un bandeau par segment du contour décalé
-        if PR0.roofPar > 0.05 do
+        -- 0.6.16 : terrasse EN BAC — couronne d'acrotère pleine (épaisseur
+        -- acrTh) et plateau intérieur enfoncé (gorge acrGorge), le tout partant
+        -- du contour décalé du débord (oPts). Plus de dalle + bandeaux séparés.
+        if PR0.roofPar > 0.05 then
         (
-            local parT = 0.2
-            local n = oPts.count
+            local iPts = FR_OffsetContour oPts (-PR0.acrTh)
 
-            for k = 1 to n do
-            (
-                local k2 = k + 1
-                if k2 > n do k2 = 1
-
-                local a = oPts[k]
-                local b = oPts[k2]
-
-                local exE = b - a
-                exE.z = 0.0
-
-                if (length exE) > 0.05 do
-                (
-                    exE = normalize exE
-
-                    local inE = normalize (cross [0,0,1] exE)
-                    local bP = matrix3 exE inE [0,0,1] ((a + b)/2)
-
-                    FR_LocalBox ("FRAMER_Roof_Par_"+(k as string)) 0.0 (parT/2) (totalH + PR0.roofPar/2) ((length (b - a)) + 0.6) parT PR0.roofPar bP roofMat
-                )
-            )
+            FR_RoofBac "FRAMER_Roof_Terrasse" oPts iPts totalH PR0.roofPar PR0.acrGorge roofMat
         )
+        else
+            -- pas d'acrotère : simple dalle sur le contour décalé
+            FR_RoofSlabContour "FRAMER_Roof_Slab" oPts totalH 0.2 roofMat
     )
     -- Mansard en mode contour : repli quatre pans (faîtage sur le plus long
     -- segment) ; le vrai brisis/terrasson n'existe qu'en façade simple.
@@ -3051,7 +3169,7 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
         local D = depth + PR.roofDepth
 
         if PR.roofMode == "Flat" then
-            FR_RoofFlatRect "FRAMER_Roof" bR W D totalH PR.roofOver PR.roofPar roofMat
+            FR_RoofFlatRect "FRAMER_Roof" bR W D totalH PR.roofOver PR.roofPar roofMat acrTh:PR.acrTh acrGorge:PR.acrGorge
         else if PR.roofMode == "Gable" then
             FR_RoofGableRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat pierMat rk:PR.ridgeMode rw:PR.ridgeW rh:PR.ridgeH
         -- NOTE : tout `else if` de cette chaîne doit utiliser `then` (jamais
@@ -3942,7 +4060,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.16" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -4092,16 +4210,20 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
     spinner spRoofPar "" pos:[215,286] width:190 range:[0,2,0.5] type:#float scale:0.05 tooltip:"Garde-corps plein autour de la terrasse (toit-terrasse uniquement)."
     label l_spRoofDepth "Profondeur du bâtiment :" pos:[25,316] width:185 height:16
     spinner spRoofDepth "" pos:[215,314] width:190 range:[2,60,8] type:#float scale:0.5 tooltip:"Profondeur couverte derrière la façade (façade simple ; en mode contour, le toit couvre tout le polygone)."
-    label l_spMansP2 "Pente du terrasson (°) :" pos:[25,404] width:185 height:16
-    spinner spMansP2 "" pos:[215,402] width:190 range:[5,60,30] type:#float scale:1 tooltip:"Pente douce du terrasson (haut du toit mansardé). Le brisis utilise la pente principale ci-dessus (à monter à 60-75° pour un vrai mansard)."
-    label l_spMansTop "Largeur du toit plat (m) :" pos:[25,430] width:185 height:16
-    spinner spMansTop "" pos:[215,428] width:190 range:[0.5,20,2] type:#float scale:0.1 tooltip:"Largeur du plateau plat au sommet du toit mansardé (entre les deux terrassons)."
-    dropdownList ddRidge "Couvre-joint (faîtage) :" pos:[25,456] width:380 items:#("Aucun","Triangulaire","Arrondi (tuile faîtière)") selection:1 tooltip:"Couvre la jonction entre les versants : faîtage (deux pentes), faîtage + 4 arêtiers (quatre pans), arêtes du plateau (mansard). Triangulaire : sec et moderne. Arrondi : tuile faîtière traditionnelle."
-    label l_spRidgeW "Largeur du couvre-joint :" pos:[25,506] width:185 height:16
-    spinner spRidgeW "" pos:[215,504] width:190 range:[0.05,1,0.18] type:#float scale:0.01 tooltip:"Largeur du couvre-joint posé sur les jonctions de versants."
-    label l_spRidgeH "Hauteur du couvre-joint :" pos:[25,532] width:185 height:16
-    spinner spRidgeH "" pos:[215,530] width:190 range:[0.02,0.5,0.10] type:#float scale:0.01 tooltip:"Hauteur du couvre-joint au-dessus de la jonction."
-    label lbRoofHelp "Le toit part du contour décalé vers l'extérieur (débord), fond fermé vu de dessous. Terrasse : dalle + acrotère suivant le contour. Deux/quatre pans : faîtage sur le plus long segment, versants suivant le contour (footprints convexes recommandés ; pas de pignons maçonnés en mode contour). Un toit remplace la corniche." pos:[25,350] width:380 height:48
+    label l_spAcrTh "Épaisseur de l'acrotère :" pos:[25,342] width:185 height:16
+    spinner spAcrTh "" pos:[215,340] width:190 range:[0.1,2,0.55] type:#float scale:0.05 tooltip:"Épaisseur de la couronne de l'acrotère (toit-terrasse « en bac »)."
+    label l_spAcrGorge "Gorge intérieure :" pos:[25,368] width:185 height:16
+    spinner spAcrGorge "" pos:[215,366] width:190 range:[0,2,0.4] type:#float scale:0.05 tooltip:"Creux intérieur : le plateau de la terrasse descend de cette valeur sous le sommet de l'acrotère (acrotère en bac, avec sa gorge)."
+    label l_spMansP2 "Pente du terrasson (°) :" pos:[25,448] width:185 height:16
+    spinner spMansP2 "" pos:[215,446] width:190 range:[5,60,30] type:#float scale:1 tooltip:"Pente douce du terrasson (haut du toit mansardé). Le brisis utilise la pente principale ci-dessus (à monter à 60-75° pour un vrai mansard)."
+    label l_spMansTop "Largeur du toit plat (m) :" pos:[25,474] width:185 height:16
+    spinner spMansTop "" pos:[215,472] width:190 range:[0.5,20,2] type:#float scale:0.1 tooltip:"Largeur du plateau plat au sommet du toit mansardé (entre les deux terrassons)."
+    dropdownList ddRidge "Couvre-joint (faîtage) :" pos:[25,500] width:380 items:#("Aucun","Triangulaire","Arrondi (tuile faîtière)") selection:1 tooltip:"Couvre la jonction entre les versants : faîtage (deux pentes), faîtage + 4 arêtiers (quatre pans), arêtes du plateau (mansard). Triangulaire : sec et moderne. Arrondi : tuile faîtière traditionnelle."
+    label l_spRidgeW "Largeur du couvre-joint :" pos:[25,550] width:185 height:16
+    spinner spRidgeW "" pos:[215,548] width:190 range:[0.05,1,0.18] type:#float scale:0.01 tooltip:"Largeur du couvre-joint posé sur les jonctions de versants."
+    label l_spRidgeH "Hauteur du couvre-joint :" pos:[25,576] width:185 height:16
+    spinner spRidgeH "" pos:[215,574] width:190 range:[0.02,0.5,0.10] type:#float scale:0.01 tooltip:"Hauteur du couvre-joint au-dessus de la jonction."
+    label lbRoofHelp "Le toit part du contour décalé vers l'extérieur (débord), fond fermé vu de dessous. Terrasse : dalle + acrotère suivant le contour. Deux/quatre pans : faîtage sur le plus long segment, versants suivant le contour (footprints convexes recommandés ; pas de pignons maçonnés en mode contour). Un toit remplace la corniche." pos:[25,394] width:380 height:48
 
     /* ----- onglet 6 : Variation ----- */
 
@@ -4292,6 +4414,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
         spRoofPar.visible = t5
         l_spRoofDepth.visible = t5
         spRoofDepth.visible = t5
+        l_spAcrTh.visible = t5
+        spAcrTh.visible = t5
+        l_spAcrGorge.visible = t5
+        spAcrGorge.visible = t5
         l_spMansP2.visible = t5
         spMansP2.visible = t5
         l_spMansTop.visible = t5
@@ -4447,6 +4573,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
         l_spRoofPitch.enabled = sloped or mans
         spRoofPar.enabled = flat or mans
         l_spRoofPar.enabled = flat or mans
+        spAcrTh.enabled = flat
+        l_spAcrTh.enabled = flat
+        spAcrGorge.enabled = flat
+        l_spAcrGorge.enabled = flat
         spMansP2.enabled = mans
         l_spMansP2.enabled = mans
         spMansTop.enabled = mans
@@ -4506,6 +4636,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
         PR.roofOver = spRoofOver.value
         PR.roofPar = spRoofPar.value
         PR.roofDepth = spRoofDepth.value
+        PR.acrTh = spAcrTh.value
+        PR.acrGorge = spAcrGorge.value
         PR.mansP2 = spMansP2.value
         PR.mansTop = spMansTop.value
         PR.ridgeMode = FR_RidgeCodes[ddRidge.selection]
@@ -4657,6 +4789,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
         spRoofOver.value = PR.roofOver
         spRoofPar.value = PR.roofPar
         spRoofDepth.value = PR.roofDepth
+        spAcrTh.value = PR.acrTh
+        spAcrGorge.value = PR.acrGorge
         spMansP2.value = PR.mansP2
         spMansTop.value = PR.mansTop
         local ri2 = findItem FR_RidgeCodes PR.ridgeMode
@@ -4829,6 +4963,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
             local vRoofO = FR_CSegs[FR_CurSeg].roofOver
             local vRoofPar = FR_CSegs[FR_CurSeg].roofPar
             local vRoofD = FR_CSegs[FR_CurSeg].roofDepth
+            local vAcrTh = FR_CSegs[FR_CurSeg].acrTh
+            local vAcrGorge = FR_CSegs[FR_CurSeg].acrGorge
             local vColW = FR_CSegs[FR_CurSeg].colWall
             local vColF = FR_CSegs[FR_CurSeg].colFrame
             local vColP = FR_CSegs[FR_CurSeg].colPier
@@ -4880,6 +5016,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
                     FR_CSegs[k].roofOver = vRoofO
                     FR_CSegs[k].roofPar = vRoofPar
                     FR_CSegs[k].roofDepth = vRoofD
+                    FR_CSegs[k].acrTh = vAcrTh
+                    FR_CSegs[k].acrGorge = vAcrGorge
                     FR_CSegs[k].colWall = vColW
                     FR_CSegs[k].colFrame = vColF
                     FR_CSegs[k].colPier = vColP
@@ -5023,8 +5161,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.15 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.15")
+                "FRAMER | Générateur de façades 0.6.16 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.16")
         )
         catch()
 
@@ -5513,6 +5651,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.15" width:430
                     PRk.roofOver = PR1.roofOver
                     PRk.roofPar = PR1.roofPar
                     PRk.roofDepth = PR1.roofDepth
+                    PRk.acrTh = PR1.acrTh
+                    PRk.acrGorge = PR1.acrGorge
                     PRk.mansTop = PR1.mansTop
                     PRk.mansP2 = PR1.mansP2
                     PRk.ridgeMode = PR1.ridgeMode

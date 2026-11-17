@@ -28,6 +28,16 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.16
+
+- **Terrasse « en bac »** (toit-terrasse, façade simple et mode contour) :
+  l'acrotère est construit comme modélisé à la main — couronne pleine
+  (**Épaisseur de l'acrotère**, défaut 0,55) dépassant de la hauteur
+  d'acrotère, plateau intérieur enfoncé (**Gorge intérieure**, défaut 0,40).
+  Solide unique partant du contour de base translaté à la hauteur du
+  bâtiment et décalé du débord (défaut porté à 0,50). Presets :
+  acrTh/acrGorge (FRAMER_PARAMS=21).
+
 ## Version 0.6.15
 
 - **Corrigé : « mauvaise triangulation » du toit-terrasse en mode contour**
