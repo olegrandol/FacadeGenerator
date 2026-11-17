@@ -2611,7 +2611,9 @@ fn FR_OffsetContour pts d =
 
     -- dernier recours : ne pas décaler du tout (mieux vaut un toit sans débord
     -- ou sans gorge qu'un toit en vrille)
-    if not (FR_PolySimple out) do
+    -- NOTE : branches en `then` — un `if ... do` ne peut PAS être suivi d'un
+    -- `else` en MAXScript (erreur « à else, attendu <facteur> »)
+    if not (FR_PolySimple out) then
     (
         FR_Msg ("Décalage du toit impossible (contour trop étroit) : débord réduit à 0.")
         out = pts
