@@ -486,7 +486,7 @@ rollout FR_TESTBAC "TEST BAC (acrotere seul)"
 
     on pbContour picked obj do
     (
-        if obj != undefined and ( superclassof obj == Shape ) do
+        if obj != undefined and ( superclassof obj == Shape ) then
         (
             contourNode = obj
             pbContour.text = obj.name + " (" + ((numKnots obj 1) as string) + " sommets)"
