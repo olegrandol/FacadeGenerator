@@ -171,7 +171,7 @@ fn T_PtsToSpline pts nm col =
 
     for p in pts do addKnot sp si #corner #line p
     close sp si
-    update sp
+    updateShape sp  -- (update est une operation MESH ; sur une spline : updateShape)
 
     sp.name = nm
     sp.wirecolor = col
@@ -207,7 +207,7 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
         local si = addNewSpline sp
         for p in #([0,0,0],[20,0,0],[20,10,0],[0,10,0]) do addKnot sp si #corner #line p
         close sp si
-        update sp
+        updateShape sp
 
         contourNode = sp
         pbContour.text = "Rectangle 20x10 (auto)"
