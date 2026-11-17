@@ -1,7 +1,26 @@
 /*
-    FRAMER 0.6.17
+    FRAMER 0.6.18
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    CORRIGÉ EN 0.6.18 :
+    - TOIT DU MODE CONTOUR (formes en L et contours concaves) : le décalage
+      du contour (débord vers l'extérieur, puis épaisseur d'acrotère vers
+      l'intérieur) peut s'AUTO-INTERSECTER sur les angles rentrants ou les
+      formes étroites — c'est ce qui produisait les triangles en vrille et
+      les dalles détachées. Le résultat du décalage est désormais VÉRIFIÉ
+      (polygone simple + aire cohérente) : en cas d'échec le décalage est
+      réduit de moitié, plusieurs fois si nécessaire, et un message précise
+      la valeur effectivement appliquée. Les sommets confondus introduits
+      par le décalage sont supprimés (ils faisaient échouer la triangulation
+      = trous dans le toit plat).
+    - DIAGNOSTICS : quand aucun versant ne peut être construit (pente trop
+      faible pour la profondeur, découpe impossible) ou quand la terrasse
+      ne peut pas être créée, un message explique pourquoi au lieu de
+      laisser un toit absent sans explication.
+    - INTERFACE : la ligne « Espacement » des lucarnes se superposait au
+      bouton GÉNÉRER (chevauchement y=700) — les contrôles lucarnes sont
+      remontés au-dessus.
 
     NOUVEAU EN 0.6.17 :
     - LUCARNES DU TOIT MANSARDÉ (onglet Toit, « Lucarnes (mansard) ») :
@@ -2455,11 +2474,52 @@ fn FR_RoofSlabContour p pts z0 th mat =
     )
 )
 
--- décalage d'un contour fermé vers l'EXTÉRIEUR (contour anti-horaire : l'extérieur est à droite)
--- jonctions en mitre, bridées pour les angles très aigus (limité à ~3x le décalage)
--- 0.6.15 : le contour est normalisé en anti-horaire d'abord — un contour parcouru
--- dans le sens horaire était décalé vers l'INTÉRIEUR (débord inversé, dalle trop petite).
-fn FR_OffsetContour pts d =
+-- les deux segments 2D p1p2 et p3p4 se croisent-ils PROPREMENT (intersection
+-- stricte, tangements ignorés) ? Test par les orientations relatives.
+fn FR_Cross2 a b = (a.x * b.y - a.y * b.x)
+
+fn FR_SegX p1 p2 p3 p4 =
+(
+    local d1 = FR_Cross2 (p2 - p1) (p3 - p1)
+    local d2 = FR_Cross2 (p2 - p1) (p4 - p1)
+    local d3 = FR_Cross2 (p4 - p3) (p1 - p3)
+    local d4 = FR_Cross2 (p4 - p3) (p2 - p3)
+
+    ((d1 > 0.0 and d2 < 0.0) or (d1 < 0.0 and d2 > 0.0)) and ((d3 > 0.0 and d4 < 0.0) or (d3 < 0.0 and d4 > 0.0))
+)
+
+-- un polygone fermé est-il SIMPLE (aucune auto-intersection d'arêtes non adjacentes) ?
+fn FR_PolySimple pts =
+(
+    local n = pts.count
+    local ok = true
+
+    if n >= 4 do
+    (
+        for i = 1 to n while ok do
+        (
+            local i2 = i + 1
+            if i2 > n do i2 = 1
+
+            for j = i + 1 to n while ok do
+            (
+                local j2 = j + 1
+                if j2 > n do j2 = 1
+
+                -- les arêtes adjacentes (qui partagent un sommet) sont ignorées
+                local adj = (j == i2) or (i == 1 and j == n)
+
+                if not adj and (FR_SegX pts[i] pts[i2] pts[j] pts[j2]) do ok = false
+            )
+        )
+    )
+
+    ok
+)
+
+-- décalage brut d'un contour fermé (mitre aux sommets, bridée pour les angles
+-- très aigus à ~3x le décalage). SANS validation — voir FR_OffsetContour.
+fn FR_OffsetMitre pts d =
 (
     pts = FR_PolyCCW pts
 
@@ -2507,6 +2567,58 @@ fn FR_OffsetContour pts d =
     )
 
     out
+)
+
+-- supprime les sommets confondus (arêtes de longueur < 1 mm) introduits par
+-- le décalage sur un contour étroit — ils font échouer la triangulation
+fn FR_DedupPts pts =
+(
+    local out = #()
+
+    for q in pts do
+    (
+        if out.count == 0 or (length (q - out[out.count])) > 0.001 do append out q
+    )
+
+    if out.count > 1 and (length (out[1] - out[out.count])) <= 0.001 do deleteItem out out.count
+
+    out
+)
+
+-- décalage VALIDÉ d'un contour fermé (0.6.18) : d positif = vers l'EXTÉRIEUR
+-- (contour anti-horaire : l'extérieur est à droite), d négatif = vers l'intérieur.
+-- Sur un contour concave (forme en L) ou étroit, la mitre peut s'AUTO-INTERSECTER
+-- (spikes qui se replient) — c'est ce qui produisait les triangles en vrille du
+-- toit. Le résultat est donc vérifié (polygone simple + aire cohérente) et en
+-- cas d'échec le décalage est réduit de moitié, plusieurs fois si nécessaire.
+fn FR_OffsetContour pts d =
+(
+    pts = FR_PolyCCW pts
+
+    local out = FR_OffsetMitre pts d
+    local dd = d
+    local try = 0
+
+    -- valide = simple, et pour un décalage intérieur l'aire reste positive
+    -- (un décalage trop fort inverse le polygone)
+    while try < 4 and not ((FR_PolySimple out) and (dd >= 0.0 or (FR_PolyArea out) > 0.0)) do
+    (
+        try = try + 1
+        dd /= 2.0
+        out = FR_OffsetMitre pts dd
+    )
+
+    -- dernier recours : ne pas décaler du tout (mieux vaut un toit sans débord
+    -- ou sans gorge qu'un toit en vrille)
+    if not (FR_PolySimple out) do
+    (
+        FR_Msg ("Décalage du toit impossible (contour trop étroit) : débord réduit à 0.")
+        out = pts
+    )
+    else if try > 0 do
+        FR_Msg ("Décalage du toit réduit à " + ((abs dd) as string) + " m (contour trop étroit pour la valeur demandée).")
+
+    FR_DedupPts out
 )
 
 -- terrasse « EN BAC » (0.6.16, d'après la manip utilisateur extrude + inset +
@@ -2731,6 +2843,8 @@ fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat =
         else
             cells = #(#(lo, 2, wMin, 1), #(hi, 2, wMax, -1))
 
+        local built = 0
+
         for c in cells do
         (
             local poly = c[1]
@@ -2748,8 +2862,20 @@ fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat =
                 )
 
                 FR_Prisma (p + "_Pente") wpts mat th
+                built = built + 1
             )
         )
+
+        -- diagnostic 0.6.18 : prévenir quand aucun versant n'a pu être construit
+        if built == 0 do
+            FR_Msg ("Versants du toit annulés : découpe impossible (contour " + (pts.count as string) + " sommets, pente " + (pitch as string) + "°).")
+
+        built
+    )
+    else
+    (
+        FR_Msg ("Versants du toit annulés : hauteur de pente nulle (pente " + (pitch as string) + "° trop faible pour la profondeur).")
+        0
     )
 )
 
@@ -2772,7 +2898,11 @@ fn FR_RoofContour pts segPRs bases totalH =
         (
             local iPts = FR_OffsetContour oPts (-PR0.acrTh)
 
-            FR_RoofBac "FRAMER_Roof_Terrasse" oPts iPts totalH PR0.roofPar PR0.acrGorge roofMat
+            local bac = FR_RoofBac "FRAMER_Roof_Terrasse" oPts iPts totalH PR0.roofPar PR0.acrGorge roofMat
+
+            -- diagnostic 0.6.18 : prévenir si le bac n'a pas pu être construit
+            if bac == undefined do
+                FR_Msg ("Terrasse annulée : contour " + (oPts.count as string) + " sommets (intérieur " + (iPts.count as string) + "), acrotère " + (PR0.roofPar as string) + " m.")
         )
         else
             -- pas d'acrotère : simple dalle sur le contour décalé
@@ -4315,7 +4445,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.17" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.18" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -4480,14 +4610,15 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.17" width:430
     spinner spRidgeH "" pos:[215,574] width:190 range:[0.02,0.5,0.10] type:#float scale:0.01 tooltip:"Hauteur du couvre-joint au-dessus de la jonction."
     label lbRoofHelp "Le toit part du contour décalé vers l'extérieur (débord), fond fermé vu de dessous. Terrasse : dalle + acrotère suivant le contour. Deux/quatre pans : faîtage sur le plus long segment, versants suivant le contour (footprints convexes recommandés ; pas de pignons maçonnés en mode contour). Un toit remplace la corniche." pos:[25,394] width:380 height:48
 
-    -- lucarnes du toit mansardé (0.6.17)
-    dropdownList ddLuc "Lucarnes (mansard) :" pos:[25,600] width:380 items:FR_LucCodes selection:1 tooltip:"Lucarnes posées sur le brisis du mansard (côté rue). Fronton : pignon triangulaire à cornice. Rectangulaire : toit en bâtière simple. Capucine : toit courbe (demi-cylindre). Alterné : une lucarne à toit en pente, puis une à toit arrondi — la répartition traditionnelle."
-    label l_spLucW "Largeur des lucarnes :" pos:[25,650] width:185 height:16
-    spinner spLucW "" pos:[215,648] width:190 range:[0.4,4,1.0] type:#float scale:0.05 tooltip:"Largeur du chevet de la lucarne."
-    label l_spLucH "Hauteur des lucarnes :" pos:[25,676] width:185 height:16
-    spinner spLucH "" pos:[215,674] width:190 range:[0.4,4,1.2] type:#float scale:0.05 tooltip:"Hauteur du chevet de la lucarne (du bas de la baie au départ du toit)."
-    label l_spLucStep "Espacement :" pos:[25,702] width:185 height:16
-    spinner spLucStep "" pos:[215,700] width:190 range:[0.5,10,3.0] type:#float scale:0.1 tooltip:"Distance entre deux lucarnes consécutives (centrage automatique sur la façade)."
+    -- lucarnes du toit mansardé (0.6.17) — 0.6.18 : remontées au-dessus du bouton
+    -- GÉNÉRER (y=700) avec lequel la ligne « Espacement » se superposait
+    dropdownList ddLuc "Lucarnes (mansard) :" pos:[25,596] width:380 items:FR_LucCodes selection:1 tooltip:"Lucarnes posées sur le brisis du mansard (côté rue). Fronton : pignon triangulaire à cornice. Rectangulaire : toit en bâtière simple. Capucine : toit courbe (demi-cylindre). Alterné : une lucarne à toit en pente, puis une à toit arrondi — la répartition traditionnelle."
+    label l_spLucW "Largeur des lucarnes :" pos:[25,620] width:185 height:16
+    spinner spLucW "" pos:[215,618] width:190 range:[0.4,4,1.0] type:#float scale:0.05 tooltip:"Largeur du chevet de la lucarne."
+    label l_spLucH "Hauteur des lucarnes :" pos:[25,644] width:185 height:16
+    spinner spLucH "" pos:[215,642] width:190 range:[0.4,4,1.2] type:#float scale:0.05 tooltip:"Hauteur du chevet de la lucarne (du bas de la baie au départ du toit)."
+    label l_spLucStep "Espacement :" pos:[25,668] width:185 height:16
+    spinner spLucStep "" pos:[215,666] width:190 range:[0.5,10,3.0] type:#float scale:0.1 tooltip:"Distance entre deux lucarnes consécutives (centrage automatique sur la façade)."
 
     /* ----- onglet 6 : Variation ----- */
 
@@ -5459,8 +5590,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.17" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.17 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.17")
+                "FRAMER | Générateur de façades 0.6.18 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.18")
         )
         catch()
 

@@ -28,6 +28,21 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.18
+
+- **Toit du mode contour (formes en L, contours concaves)** : le décalage du
+  contour (débord, épaisseur d'acrotère) peut s'auto-intersecter sur les
+  angles rentrants — c'est ce qui produisait les triangles en vrille et les
+  dalles détachées. Le résultat est désormais **validé** (polygone simple,
+  aire cohérente) : en cas d'échec le décalage est réduit de moitié
+  automatiquement, avec un message indiquant la valeur appliquée. Sommets
+  confondus supprimés (trous dans le toit plat).
+- **Diagnostics** : message explicite quand aucun versant ne peut être
+  construit (pente trop faible, découpe impossible) ou quand la terrasse
+  ne peut pas être créée.
+- **Interface** : la ligne « Espacement » des lucarnes se superposait au
+  bouton GÉNÉRER — contrôles remontés.
+
 ## Version 0.6.17
 
 - **Lucarnes du toit mansardé** (onglet Toit, « Lucarnes (mansard) ») : les 3
