@@ -2816,7 +2816,8 @@ fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat =
     local wm = (wMin + wMax)/2.0
     local h = ((wMax - wMin)/2.0) * tanP
 
-    if h > 0.05 do
+    -- branches en `then` (un `if ... do` ne peut pas être suivi d'un `else`)
+    if h > 0.05 then
     (
         -- coordonnées (u, w) du contour décalé dans le repère du faîtage
         local uv = for q in pts collect [dot (q - p1) ex, dot (q - p1) inw, 0.0]
