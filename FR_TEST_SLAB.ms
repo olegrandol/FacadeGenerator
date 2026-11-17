@@ -181,32 +181,24 @@ fn T_PtsToSpline pts nm col =
     sp
 )
 
--- mesure le z du fond du bac : la face la plus proche du centre d'origine
--- en XY (apres extrusion, les indices de faces changent)
-fn T_MesureFond o c0 =
+-- mesure le z du FOND du bac = plus bas z parmi les faces orientées vers le
+-- HAUT (le dessous de la dalle a le même centre XY mais normale -Z : ignoré.
+-- Sur une dalle neuve le résultat = z du dessus ; avec un bac = z du fond)
+fn T_MesureFond o =
 (
-    local best = 0
-    local bestD = 1e9
+    local zMin = 1e9
     local nf = polyop.getNumFaces o
 
     for f = 1 to nf do
     (
-        -- UNIQUEMENT les faces orientées vers le HAUT : le dessous de la
-        -- dalle a le même centre XY que le fond du bac mais normale -Z,
-        -- et le confondre faisait croire à un échec -> double extrusion
         if (polyop.getFaceNormal o f).z > 0.9 do
         (
-            local c = polyop.getFaceCenter o f
-            local d = sqrt ((c.x - c0.x)^2 + (c.y - c0.y)^2)
-            if d < bestD do
-            (
-                bestD = d
-                best = f
-            )
+            local z = (polyop.getFaceCenter o f).z
+            if z < zMin do zMin = z
         )
     )
 
-    if best == 0 then 0.0 else (polyop.getFaceCenter o best).z
+    if zMin == 1e9 then 0.0 else zMin
 )
 
 rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
@@ -263,6 +255,15 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
         else
         (
             ClearAll()
+
+            -- supprimer les ANCIENS objets homonymes encore en scène :
+            -- une relance du script vide le pool mais laisse les objets, et le
+            -- nouveau serait renommé TEST_outline001 ; getNodeByName prendrait
+            -- alors le VIEIL objet (cause des doubles extrusions et du L raté)
+            local old = getNodeByName "TEST_outline"
+            if old != undefined do delete old
+            old = getNodeByName "TEST_contour_origine"
+            if old != undefined do delete old
 
             local pts = for k = 1 to (numKnots contourNode 1) collect (in coordsys world (getKnotPoint contourNode 1 k))
 
@@ -321,86 +322,109 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
                 messageBox "Aucune face du dessus trouvée — bizarre."
             else
             (
-                -- memoriser les centres des faces du dessus AVANT inset
-                -- (pour retrouver les faces du MILIEU apres, les indices changent)
-                local centers = for f in topF collect polyop.getFaceCenter o f
+                local zTop = (polyop.getFaceCenter o topF[1]).z
 
-                -- Edit_Poly n°1 : inset GROUPE (manip manuelle)
-                -- IMPORTANT : le panneau doit être en mode Modify, l'Edit_Poly
-                -- doit être l'objet COURANT du panneau et le niveau sous-objet
-                -- doit être 4 (Face), sinon Commit() ne s'applique pas
-                max modify mode
-                modPanel.addModToSelection (Edit_Poly()) ui:on
-                local ep = o.modifiers[#Edit_Poly]
-                modPanel.setCurrentObject ep
-                subobjectLevel = 4
-
-                -- SetSelection (et NON Select : Select = enregistrement de clic
-                -- interactif, sans effet en scripte)
-                ep.SetSelection #Face (topF as bitArray)
-                format "T-BAC2: selection dans Edit_Poly=%\n" ((ep.GetSelection #Face) as string)
-                ep.SetOperation #Inset
-                ep.insetType = 0
-                ep.insetAmount = spInset.value
-                ep.Commit ()
-
-                format "T-BAC2: inset % commité\n" spInset.value
-
-                -- cuit l'inset dans le poly de base (sinon polyop ne voit pas
-                -- les nouvelles faces : elles vivent dans le modificateur)
-                convertToPoly o
-
-                -- retrouver les faces du MILIEU : normale +Z et centre identique
-                -- au centre d'origine (l'inset garde le milieu en place)
-                local nf2 = polyop.getNumFaces o
-                local midF = #()
-
-                for f = 1 to nf2 do
-                (
-                    if (polyop.getFaceNormal o f).z > 0.9 do
-                    (
-                        local c = polyop.getFaceCenter o f
-                        for k = 1 to centers.count do
-                        (
-                            if distance c centers[k] < 0.005 do append midF f
-                        )
-                    )
-                )
-
-                format "T-BAC2: faces milieu retrouvees=% sur %\n" midF.count nf2
-
-                if midF.count == 0 then
-                    messageBox "Faces du milieu introuvables après inset."
+                -- Garde-fou ANTI-VIEILLE-DALLE : sur une dalle neuve, TOUTES les
+                -- faces du dessus sont à z = hauteur d'extrusion. S'il existe déjà
+                -- une face du dessus plus bas, un bac a déjà été creusé (ou c'est
+                -- un vieil objet homonyme) -> on refuse au lieu d'enfoncer encore
+                if ((T_MesureFond o) < zTop - 0.01) then
+                    messageBox ("Cette dalle a déjà un bac (ou est un vieil objet) : fond à z=" + ((T_MesureFond o) as string) + ".\nRefais OUTLINE + EXTRUDE (étape 1) d'abord.")
                 else
                 (
-                    -- extrusion négative du fond : 2 méthodes testées l'une
-                    -- après l'autre, la mesure du z du fond désigne celle qui mord
-                    local c0 = polyop.getFaceCenter o midF[1]
-                    local zAv = c0.z
-                    local zAtt = zAv + spExtr.value
-                    local fc0 = polyop.getNumFaces o
+                    -- memoriser les centres des faces du dessus AVANT inset
+                    -- (repli si le modificateur perd la sélection)
+                    local centers = for f in topF collect polyop.getFaceCenter o f
 
-                    -- ESSAI 1 : polyop.extrudeFaces direct
-                    polyop.extrudeFaces o (midF as bitArray) spExtr.value
-                    local zF = T_MesureFond o c0
-                    format "T-BAC2: essai 1 polyop.extrudeFaces % — faces % -> % z fond=% (attendu %)\n" spExtr.value fc0 (polyop.getNumFaces o) zF zAtt
+                    -- UN SEUL Edit_Poly, comme la macro utilisateur :
+                    -- inset puis extrusion négative dans le même modificateur.
+                    -- IMPORTANT : mode Modify + modificateur COURANT du panneau
+                    -- + niveau sous-objet 4, sinon Commit() reste sans effet
+                    max modify mode
+                    modPanel.addModToSelection (Edit_Poly()) ui:on
+                    local ep = o.modifiers[#Edit_Poly]
+                    modPanel.setCurrentObject ep
+                    subobjectLevel = 4
 
-                    if (abs (zF - zAtt)) > 0.01 then
-                    (
-                        -- ESSAI 2 : interface EditablePoly (exemple officiel Autodesk :
-                        -- polyop.setFaceSelection puis o.extrudeFaces montant)
-                        polyop.setFaceSelection o (midF as bitArray)
-                        o.extrudeFaces spExtr.value
-                        zF = T_MesureFond o c0
-                        format "T-BAC2: essai 2 interface extrudeFaces — faces -> % z fond=% (attendu %)\n" (polyop.getNumFaces o) zF zAtt
-                    )
+                    -- SetSelection (et NON Select : Select = enregistrement de
+                    -- clic interactif, sans effet en scripté)
+                    ep.SetSelection #Face (topF as bitArray)
+                    local selBA = ep.GetSelection #Face
+                    format "T-BAC2: selection dans Edit_Poly=%\n" (selBA as string)
 
-                    if (abs (zF - zAtt)) > 0.01 then
-                        messageBox "L'extrusion du fond ne mord pas — colle les traces T-BAC2."
+                    if selBA.isEmpty then
+                        messageBox "Edit_Poly a refusé la sélection — colle les traces T-BAC2."
                     else
                     (
-                        format "T-BAC2: BAC TERMINE\n"
-                        messageBox "Bac construit (manip native Max) :\noutline + extrude + inset + extrude négatif.\nListener (F11) : lignes T-BAC2."
+                        ep.SetOperation #Inset
+                        ep.insetType = 0
+                        ep.insetAmount = spInset.value
+                        ep.Commit ()
+
+                        format "T-BAC2: inset % commité\n" spInset.value
+
+                        -- après l'inset, la sélection du modificateur doit pointer
+                        -- sur le MILIEU (comme interactivement)
+                        local midBA = ep.GetSelection #Face
+                        format "T-BAC2: selection apres inset=%\n" (midBA as string)
+
+                        if midBA.isEmpty then
+                        (
+                            -- REPLI : cuire l'inset puis retrouver le milieu par
+                            -- les centres (fiable sur les faces simples)
+                            format "T-BAC2: selection vide apres inset — repli polyop\n"
+                            convertToPoly o
+
+                            local nf2 = polyop.getNumFaces o
+                            local midF = #()
+
+                            for f = 1 to nf2 do
+                            (
+                                if (polyop.getFaceNormal o f).z > 0.9 do
+                                (
+                                    local c = polyop.getFaceCenter o f
+                                    for k = 1 to centers.count do
+                                    (
+                                        if distance c centers[k] < 0.005 do append midF f
+                                    )
+                                )
+                            )
+
+                            format "T-BAC2: repli — faces milieu=% sur %\n" midF.count nf2
+
+                            if midF.count == 0 then
+                                messageBox "Faces du milieu introuvables — colle les traces T-BAC2."
+                            else
+                                polyop.extrudeFaces o (midF as bitArray) spExtr.value
+                        )
+                        else
+                        (
+                            -- chemin normal (macro utilisateur) : extrusion dans
+                            -- le MÊME Edit_Poly, la sélection pointe le milieu
+                            ep.SetOperation #ExtrudeFace
+                            ep.extrudeFaceType = 0
+                            ep.extrudeFaceHeight = spExtr.value
+                            ep.Commit ()
+
+                            format "T-BAC2: extrusion % commitée\n" spExtr.value
+
+                            -- cuire l'Edit_Poly dans le poly de base
+                            convertToPoly o
+                        )
+
+                        -- PREUVE PAR LA MESURE (une seule extrusion, jamais deux) :
+                        -- le fond doit être à zTop + extrusion
+                        local zF = T_MesureFond o
+                        local zAtt = zTop + spExtr.value
+                        format "T-BAC2: z fond mesuré=% (attendu %)\n" zF zAtt
+
+                        if (abs (zF - zAtt)) > 0.01 then
+                            messageBox "Le fond n'est pas à la bonne hauteur — colle les traces T-BAC2."
+                        else
+                        (
+                            format "T-BAC2: BAC TERMINE\n"
+                            messageBox "Bac construit (manip native Max) :\noutline + extrude + inset + extrude négatif.\nListener (F11) : lignes T-BAC2."
+                        )
                     )
                 )
             )
