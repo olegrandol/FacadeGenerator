@@ -1,9 +1,28 @@
 /*
-    FRAMER 0.6.10
+    FRAMER 0.6.11
     Générateur procédural de façades
     Autodesk 3ds Max 2026
 
-    NOUVEAU EN 0.6.9 :
+    NOUVEAU EN 0.6.11 :
+    - TOIT MANSARDÉ (nouveau choix « Mansard (brisis + terrasson) » du menu
+      Type de toit) : le toit à la française en deux pentes par versant —
+      le BRISIS, raide et bas (utilise la pente principale, à monter à
+      60-75° dans le menu), puis le TERRASSON, doux (nouvelle réglage
+      « Pente du terrasson », ~30°), réuni par un PLATEAU PLAT au sommet
+      (réglage « Largeur du toit plat »), le tout ceinturé par l'acrotère
+      (réglage « Hauteur de l'acrotère » réutilisé). Structure : 4 prismes
+      de brisis + 4 prismes de terrasson + dalle sommitale + acrotères.
+      En mode contour, le mansard retombe pour l'instant en quatre pans
+      (faîtage sur le plus long segment) — limitation documentée.
+    - PENTE DU TOIT étendue à 80° (le brisis d'un vrai mansard est raide).
+
+    CORRIGÉ EN 0.6.11 :
+    - CRASH AU LANCEMENT « Propriété inconnue: "color" dans
+      LabelControl:lbEdit » : les labels MAXScript n'ont PAS de propriété
+      couleur (contrairement aux barres de progression). Le liseret de mode
+      repose sur la barre colorée + les libellés + les titres de groupe.
+
+    NOUVEAU EN 0.6.10 :
     - MARQUEUR VISUEL DE MODE : liseret coloré dans le bandeau « Mode de
       travail » — BLEU en création, ORANGE VIF en édition — avec le libellé,
       le titre du groupe et le titre de la fenêtre qui affichent « ● ÉDITION ● »
@@ -312,7 +331,7 @@ global FR_BalcCodes = #("None","Out","In","Cont","Bow","BowS","Mix")
 global FR_EntCodes = #("None","Center","Left","Right","Random")
 global FR_RailCodes = #("None","Glass","Bars","Solid","Lisse")
 global FR_CapCodes = #("None","Slab","Lam")
-global FR_RoofCodes = #("None","Flat","Gable","Hip")
+global FR_RoofCodes = #("None","Flat","Gable","Hip","Mansard")
 
 -- valeurs par étage du mode "indépendants" (globales : un local de rollout valait OK)
 global FR_gH = #(3.0)
@@ -391,6 +410,10 @@ struct FRParams
     roofOver = 0.4,
     roofPar = 0.5,
     roofDepth = 8.0,
+    -- toit mansardé : largeur du plateau plat sommital (m) et pente du
+    -- terrasson (degrés) ; le brisis utilise la pente principale (roofPitch)
+    mansTop = 2.0,
+    mansP2 = 30.0,
     -- un élément par étage d'élévation
     flH = #(),
     flMode = #(),
@@ -518,7 +541,7 @@ fn FR_ParamsToString PR =
 (
     local ss = stringStream ""
 
-    format "FRAMER_PARAMS=13\n" to:ss
+    format "FRAMER_PARAMS=15\n" to:ss
     format "width=%\n" (FR_F PR.width) to:ss
     format "groundH=%\n" (FR_F PR.groundH) to:ss
     format "upperH=%\n" (FR_F PR.upperH) to:ss
@@ -575,6 +598,8 @@ fn FR_ParamsToString PR =
     format "roofOver=%\n" (FR_F PR.roofOver) to:ss
     format "roofPar=%\n" (FR_F PR.roofPar) to:ss
     format "roofDepth=%\n" (FR_F PR.roofDepth) to:ss
+    format "mansTop=%\n" (FR_F PR.mansTop) to:ss
+    format "mansP2=%\n" (FR_F PR.mansP2) to:ss
     format "flH=%\n" (FR_JoinF PR.flH) to:ss
     format "flMode=%\n" (FR_JoinS PR.flMode) to:ss
     format "flWin=%\n" (FR_JoinF PR.flWin) to:ss
@@ -679,6 +704,8 @@ fn FR_ParamsFromString txt =
                 "roofOver": PR.roofOver = v as float
                 "roofPar": PR.roofPar = v as float
                 "roofDepth": PR.roofDepth = v as float
+                "mansTop": PR.mansTop = v as float
+                "mansP2": PR.mansP2 = v as float
                 "flH": PR.flH = for s in (filterString v ",") collect (s as float)
                 "flMode": PR.flMode = for s in (filterString v ",") collect s
                 "flWin": PR.flWin = for s in (filterString v ",") collect (s as float)
@@ -1649,6 +1676,67 @@ fn FR_RoofHipRect p basis W D z0 pitch over matRoof =
     )
 )
 
+-- toit MANSARDE sur un rectangle : brisis raide (pente réglée = roofPitch),
+-- terrasson doux (mansP2), plate-forme PLANE au sommet (mansTop de large)
+-- + acrotère (roofPar) — les 4 côtés ont la même course horizontale, la
+-- plate-forme reste un rectangle (comme un toit à quatre pans à double
+-- rupture de pente)
+fn FR_RoofMansardRect p basis W D z0 pitch p2 over topW parH matRoof =
+(
+    local th = 0.12
+    local u1 = -over
+    local u2 = W + over
+    local v1 = -over
+    local v2 = D + over
+
+    -- course horizontale totale des deux pentes (brisis + terrasson)
+    local runT = amax #(0.2, (((amin #(u2-u1, v2-v1)) - topW)/2.0))
+
+    -- répartition brisis / terrasson : le brisis raide couvre moins de course
+    local r1 = runT*0.45
+    local r2 = runT - r1
+
+    local h1 = r1 * tan pitch
+    local h2 = h1 + r2 * tan p2
+
+    if h1 > 0.05 do
+    (
+        -- brisis (pente basse raide) : bande en tronc de pyramide, 4 côtés
+        FR_Prisma (p+"_BrF") #((FR_Pt basis u1 v1 z0), (FR_Pt basis u2 v1 z0), (FR_Pt basis (u2-r1) (v1+r1) (z0+h1)), (FR_Pt basis (u1+r1) (v1+r1) (z0+h1))) matRoof th
+        FR_Prisma (p+"_BrB") #((FR_Pt basis u2 v2 z0), (FR_Pt basis u1 v2 z0), (FR_Pt basis (u1+r1) (v2-r1) (z0+h1)), (FR_Pt basis (u2-r1) (v2-r1) (z0+h1))) matRoof th
+        FR_Prisma (p+"_BrL") #((FR_Pt basis u1 v2 z0), (FR_Pt basis u1 v1 z0), (FR_Pt basis (u1+r1) (v1+r1) (z0+h1)), (FR_Pt basis (u1+r1) (v2-r1) (z0+h1))) matRoof th
+        FR_Prisma (p+"_BrR") #((FR_Pt basis u2 v1 z0), (FR_Pt basis u2 v2 z0), (FR_Pt basis (u2-r1) (v2-r1) (z0+h1)), (FR_Pt basis (u2-r1) (v1+r1) (z0+h1))) matRoof th
+
+        -- terrasson (pente haute douce) : du brisis au bord de la plate-forme
+        local t1 = r1 + r2
+
+        FR_Prisma (p+"_TeF") #((FR_Pt basis (u1+r1) (v1+r1) (z0+h1)), (FR_Pt basis (u2-r1) (v1+r1) (z0+h1)), (FR_Pt basis (u2-t1) (v1+t1) (z0+h2)), (FR_Pt basis (u1+t1) (v1+t1) (z0+h2))) matRoof th
+        FR_Prisma (p+"_TeB") #((FR_Pt basis (u2-r1) (v2-r1) (z0+h1)), (FR_Pt basis (u1+r1) (v2-r1) (z0+h1)), (FR_Pt basis (u1+t1) (v2-t1) (z0+h2)), (FR_Pt basis (u2-t1) (v2-t1) (z0+h2))) matRoof th
+        FR_Prisma (p+"_TeL") #((FR_Pt basis (u1+r1) (v2-r1) (z0+h1)), (FR_Pt basis (u1+r1) (v1+r1) (z0+h1)), (FR_Pt basis (u1+t1) (v1+t1) (z0+h2)), (FR_Pt basis (u1+t1) (v2-t1) (z0+h2))) matRoof th
+        FR_Prisma (p+"_TeR") #((FR_Pt basis (u2-r1) (v1+r1) (z0+h1)), (FR_Pt basis (u2-r1) (v2-r1) (z0+h1)), (FR_Pt basis (u2-t1) (v2-t1) (z0+h2)), (FR_Pt basis (u2-t1) (v1+t1) (z0+h2))) matRoof th
+
+        -- plate-forme plane au sommet + acrotère (comme le toit-terrasse)
+        local fz0 = z0 + h2
+        local fu1 = u1 + t1
+        local fu2 = u2 - t1
+        local fv1 = v1 + t1
+        local fv2 = v2 - t1
+
+        if fu2 > fu1 and fv2 > fv1 do
+        (
+            FR_LocalBox (p+"_Top") ((fu1+fu2)/2) ((fv1+fv2)/2) (fz0+0.1) (fu2-fu1) (fv2-fv1) 0.2 basis matRoof
+
+            if parH > 0.05 do
+            (
+                FR_LocalBox (p+"_ParF") ((fu1+fu2)/2) (fv1+0.075) (fz0+parH/2) (fu2-fu1) 0.15 parH basis matRoof
+                FR_LocalBox (p+"_ParB") ((fu1+fu2)/2) (fv2-0.075) (fz0+parH/2) (fu2-fu1) 0.15 parH basis matRoof
+                FR_LocalBox (p+"_ParL") (fu1+0.075) ((fv1+fv2)/2) (fz0+parH/2) 0.15 (fv2-fv1) parH basis matRoof
+                FR_LocalBox (p+"_ParR") (fu2-0.075) ((fv1+fv2)/2) (fz0+parH/2) 0.15 (fv2-fv1) parH basis matRoof
+            )
+        )
+    )
+)
+
 -- point strictement dans le triangle abc (test par les signes, plan XY)
 fn FR_InTri p a b c =
 (
@@ -2033,7 +2121,9 @@ fn FR_RoofContour pts segPRs bases totalH =
             )
         )
     )
-    else if PR0.roofMode == "Gable" or PR0.roofMode == "Hip" then
+    -- Mansard en mode contour : repli quatre pans (faîtage sur le plus long
+    -- segment) ; le vrai brisis/terrasson n'existe qu'en façade simple.
+    else if PR0.roofMode == "Gable" or PR0.roofMode == "Hip" or PR0.roofMode == "Mansard" then
     (
         -- le plus long segment donne la direction du faîtage
         local kLong = 1
@@ -2665,6 +2755,8 @@ fn FR_Generate PR basis noEndPiers:false endExt:0.0 noRoof:false =
             FR_RoofGableRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat pierMat
         else if PR.roofMode == "Hip" do
             FR_RoofHipRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.roofOver roofMat
+        else if PR.roofMode == "Mansard" do
+            FR_RoofMansardRect "FRAMER_Roof" bR W D totalH PR.roofPitch PR.mansP2 PR.roofOver PR.mansTop PR.roofPar roofMat
     )
 
     true
@@ -3530,7 +3622,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.11" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -3669,15 +3761,19 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
     /* ----- onglet 5 : Toit ----- */
 
     groupBox gbRoof "Toit" pos:[10,160] width:410 height:250
-    dropdownList ddRoof "Type de toit :" pos:[25,182] width:380 items:#("Aucun","Terrasse + acrotère","Deux pentes (pignons)","Quatre pans (croupes)") selection:1 tooltip:"Aucun : façade nue. Terrasse : dalle + acrotère (remplace la corniche). Deux ou quatre pans : toiture en pente."
+    dropdownList ddRoof "Type de toit :" pos:[25,182] width:380 items:#("Aucun","Terrasse + acrotère","Deux pentes (pignons)","Quatre pans (croupes)","Mansard (brisis + terrasson)") selection:1 tooltip:"Aucun : façade nue. Terrasse : dalle + acrotère (remplace la corniche). Deux ou quatre pans : toiture en pente. Mansard : brisis raide (pente principale) + terrasson doux + plateau plat au sommet."
     label l_spRoofPitch "Pente (degrés) :" pos:[25,232] width:185 height:16
-    spinner spRoofPitch "" pos:[215,230] width:190 range:[10,60,30] type:#float scale:1 tooltip:"Pente des versants (toits à deux ou quatre pans)."
+    spinner spRoofPitch "" pos:[215,230] width:190 range:[10,80,30] type:#float scale:1 tooltip:"Pente des versants (toits à deux ou quatre pans). Pour un mansard, monter à 60-75° : c'est la pente raide du brisis."
     label l_spRoofOver "Débord du toit :" pos:[25,260] width:185 height:16
     spinner spRoofOver "" pos:[215,258] width:190 range:[0,2,0.4] type:#float scale:0.05 tooltip:"Saillie du toit au-delà des murs. En mode contour : le contour est décalé vers l'EXTÉRIEUR de cette valeur pour dessiner le toit (fond fermé vu de dessous)."
     label l_spRoofPar "Hauteur de l'acrotère :" pos:[25,288] width:185 height:16
     spinner spRoofPar "" pos:[215,286] width:190 range:[0,2,0.5] type:#float scale:0.05 tooltip:"Garde-corps plein autour de la terrasse (toit-terrasse uniquement)."
     label l_spRoofDepth "Profondeur du bâtiment :" pos:[25,316] width:185 height:16
     spinner spRoofDepth "" pos:[215,314] width:190 range:[2,60,8] type:#float scale:0.5 tooltip:"Profondeur couverte derrière la façade (façade simple ; en mode contour, le toit couvre tout le polygone)."
+    label l_spMansP2 "Pente du terrasson (°) :" pos:[25,404] width:185 height:16
+    spinner spMansP2 "" pos:[215,402] width:190 range:[5,60,30] type:#float scale:1 tooltip:"Pente douce du terrasson (haut du toit mansardé). Le brisis utilise la pente principale ci-dessus (à monter à 60-75° pour un vrai mansard)."
+    label l_spMansTop "Largeur du toit plat (m) :" pos:[25,430] width:185 height:16
+    spinner spMansTop "" pos:[215,428] width:190 range:[0.5,20,2] type:#float scale:0.1 tooltip:"Largeur du plateau plat au sommet du toit mansardé (entre les deux terrassons)."
     label lbRoofHelp "Le toit part du contour décalé vers l'extérieur (débord), fond fermé vu de dessous. Terrasse : dalle + acrotère suivant le contour. Deux/quatre pans : faîtage sur le plus long segment, versants suivant le contour (footprints convexes recommandés ; pas de pignons maçonnés en mode contour). Un toit remplace la corniche." pos:[25,350] width:380 height:48
 
     /* ----- onglet 6 : Variation ----- */
@@ -3867,6 +3963,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
         spRoofPar.visible = t5
         l_spRoofDepth.visible = t5
         spRoofDepth.visible = t5
+        l_spMansP2.visible = t5
+        spMansP2.visible = t5
+        l_spMansTop.visible = t5
+        spMansTop.visible = t5
         lbRoofHelp.visible = t5
 
         gb6.visible = t6
@@ -4001,11 +4101,16 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
         local r = FR_RoofCodes[ddRoof.selection]
         local flat = (r == "Flat")
         local sloped = (r == "Gable" or r == "Hip")
+        local mans = (r == "Mansard")
 
-        spRoofPitch.enabled = sloped
-        l_spRoofPitch.enabled = sloped
-        spRoofPar.enabled = flat
-        l_spRoofPar.enabled = flat
+        spRoofPitch.enabled = sloped or mans
+        l_spRoofPitch.enabled = sloped or mans
+        spRoofPar.enabled = flat or mans
+        l_spRoofPar.enabled = flat or mans
+        spMansP2.enabled = mans
+        l_spMansP2.enabled = mans
+        spMansTop.enabled = mans
+        l_spMansTop.enabled = mans
     )
 
     /* ----- interface <-> paramètres ----- */
@@ -4053,6 +4158,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
         PR.roofOver = spRoofOver.value
         PR.roofPar = spRoofPar.value
         PR.roofDepth = spRoofDepth.value
+        PR.mansP2 = spMansP2.value
+        PR.mansTop = spMansTop.value
 
         PR.seedVal = spSeed.value
         PR.variation = spVar.value
@@ -4197,6 +4304,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
         spRoofOver.value = PR.roofOver
         spRoofPar.value = PR.roofPar
         spRoofDepth.value = PR.roofDepth
+        spMansP2.value = PR.mansP2
+        spMansTop.value = PR.mansTop
         UpdateRoofUI()
 
         -- valeurs "anciennes façades" : serviront à compléter les tableaux manquants
@@ -4543,14 +4652,12 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
         if edit then
         (
             pbModeBar.color = color 235 130 30
-            lbEdit.color = color 200 90 0
             lbEdit.text = "● MODE ÉDITION : les réglages modifient la façade sélectionnée."
             gbWork.text = "Mode de travail — ÉDITION"
         )
         else
         (
             pbModeBar.color = color 120 150 190
-            lbEdit.color = color 30 30 30
             lbEdit.text = "Nouvelle façade : réglez puis cliquez sur Générer."
             gbWork.text = "Mode de travail"
         )
@@ -4558,8 +4665,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.10 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.10")
+                "FRAMER | Générateur de façades 0.6.11 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.11")
         )
         catch()
 
@@ -5046,6 +5153,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
                     PRk.roofOver = PR1.roofOver
                     PRk.roofPar = PR1.roofPar
                     PRk.roofDepth = PR1.roofDepth
+                    PRk.mansTop = PR1.mansTop
+                    PRk.mansP2 = PR1.mansP2
 
                     -- horizontal : recalculé pour ce segment (même pas de travée)
                     PRk.width = widths[k]
@@ -5342,10 +5451,10 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.10" width:430
     on spRoofPar entered do FR_LiveTick()
     on spRoofDepth buttonup do FR_LiveTick()
     on spRoofDepth entered do FR_LiveTick()
+    on spMansP2 buttonup do FR_LiveTick()
+    on spMansP2 entered do FR_LiveTick()
+    on spMansTop buttonup do FR_LiveTick()
+    on spMansTop entered do FR_LiveTick()
 )
-
-/* =========================================================
-   OUVERTURE DE L'INTERFACE
-========================================================= */
 
 createDialog FRAMER_UI

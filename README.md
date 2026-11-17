@@ -28,6 +28,20 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.11
+
+- **Toit mansardé** (nouveau choix *Mansard (brisis + terrasson)* du menu
+  Type de toit) : le toit à la française en deux pentes par versant —
+  **brisis** raide (utilise la *Pente* du toit, à monter à 60-75°, désormais
+  réglable jusqu'à 80°), **terrasson** doux (nouveau réglage *Pente du
+  terrasson*, ~30°), **plateau plat** au sommet (nouveau réglage *Largeur du
+  toit plat*), le tout ceinturé par l'acrotère (réglage *Hauteur de
+  l'acrotère* réutilisé). En mode contour, le mansard retombe pour l'instant
+  en quatre pans (faîtage sur le plus long segment) — limitation.
+- **Corrigé : crash au lancement** « Propriété inconnue: "color" dans
+  LabelControl:lbEdit » — les labels MAXScript n'ont pas de propriété couleur ;
+  le liseret de mode repose sur la barre colorée + les libellés + les titres.
+
 ## Version 0.6.10
 
 - **Arêtes biseautées** sur les casquettes et les dalles (balcons, bow-windows) :
