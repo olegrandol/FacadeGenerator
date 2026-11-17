@@ -397,9 +397,6 @@ rollout FR_TESTSLAB "TEST OUTLINE (etape 1)"
                         messageBox "Bac construit (manip native Max) :\noutline + extrude + inset + extrude négatif.\nListener (F11) : lignes T-BAC2."
                     )
                 )
-
-                    messageBox "Bac construit (manip native Max) :\noutline + extrude + inset + extrude négatif.\nListener (F11) : lignes T-BAC2."
-                )
             )
         )
     )
