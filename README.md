@@ -28,6 +28,29 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.24
+
+- **Traçage Listener du toit en mode contour** : après plusieurs retours
+  « aucun changement » sans explication, chaque étape du toit contour écrit
+  désormais dans le Listener (F11 / MAXScript) : `FR_TOIT-CONTOUR` (entrée de
+  fonction, mode, nombre de sommets, débord, hauteur totale), `FR_BANDES`
+  (brisis/terrasson mansard posés ou annulés), `FR_BAC` (bac/acrotère posé ou
+  annulé), `FR_COUVRE-JOINT ANNULE` (couvre-faîtage/croupe annulé avec les
+  valeurs fautives). En cas d'exception pendant le toit, un **messageBox**
+  s'affiche (avant : le catch supprimait le pool en silence et l'ancien
+  bâtiment restait affiché, d'où l'impression d'« aucun changement »).
+- **Procédure de diagnostic** : fermer toutes les fenêtres FRAMER, Run Script,
+  régénérer en contour, puis coller dans la conversation toutes les lignes
+  commençant par `FR_` et toute erreur rouge du Listener.
+
+## Version 0.6.23
+
+- **Couvre-faîtage universel** : en façade simple aussi (rectangle), le
+  couvre-joint est désormais toujours posé — faîtage du 2 pans, faîtage +
+  4 arêtiers du 4 pans, 4 arêtes du plateau du mansard. Avant, si
+  Couvre-joint = Aucun, la V-groove entre versants restait ouverte.
+  Aucun → profil Tri par défaut.
+
 ## Version 0.6.22
 
 - **Fente au faîtage / aux arêtes (toits en pente du mode contour)** : chaque
