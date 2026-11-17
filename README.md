@@ -28,6 +28,13 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.14
+
+- **Corrigé : crash au chargement des anciens presets** (FRAMER_PARAMS=6/9,
+  d'avant la 0.6.10) « Impossible de convertir. undefined vers type: Float »
+  — ces presets n'ont pas les réglages de balcon par étage (flBalcD/flBalcVar) ;
+  les tableaux sont désormais complétés avec les valeurs globales du preset.
+
 ## Version 0.6.13
 
 - **Couvre-joint des toits en pente** (onglet Toit) : un profil —

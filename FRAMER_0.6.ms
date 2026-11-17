@@ -1,7 +1,16 @@
 /*
-    FRAMER 0.6.13
+    FRAMER 0.6.14
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    CORRIGÉ EN 0.6.14 :
+    - CRASH AU CHARGEMENT DES ANCIENS PRESETS (FRAMER_PARAMS=6/9, d'avant
+      la 0.6.10) : « Impossible de convertir. undefined vers type: Float » —
+      ces presets n'ont pas les clés flBalcD/flBalcVar (profondeur et
+      variation de balcon PAR ÉTAGE, ajoutées en 0.6.10) ; les tableaux
+      restaient vides et le chargement de l'étage 1 lisait undefined.
+      Les tableaux par étage sont désormais complétés avec les valeurs
+      globales du preset, et le chargement d'étage est protégé.
 
     NOUVEAU EN 0.6.13 :
     - COUVRE-JOINT DES TOITS EN PENTE (onglet Toit, « Couvre-joint
@@ -3777,7 +3786,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.13" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.14" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -4228,8 +4237,9 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.13" width:430
             if bi == 0 do bi = 1
             ddBalc.selection = bi
 
-            spBalcD.value = FR_gBalcD[idx]
-            spBalcVar.value = FR_gBalcVar[idx]
+            -- garde-fou : anciens presets sans flBalcD/flBalcVar -> garder la valeur affichée
+            spBalcD.value = (if idx <= FR_gBalcD.count and FR_gBalcD[idx] != undefined then FR_gBalcD[idx] else spBalcD.value)
+            spBalcVar.value = (if idx <= FR_gBalcVar.count and FR_gBalcVar[idx] != undefined then FR_gBalcVar[idx] else spBalcVar.value)
         )
     )
 
@@ -4857,8 +4867,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.13" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.13 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.13")
+                "FRAMER | Générateur de façades 0.6.14 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.14")
         )
         catch()
 
@@ -4941,14 +4951,16 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.13" width:430
             -- ceinture et bretelles : ré-applique les tableaux par étage, au cas où un
             -- handler déclenché par FR_WriteUI (rbFloors, spFloorSel, ddBalc...) aurait
             -- réécrit FR_gBalc/FR_gH/... avec les valeurs affichées
-            FR_gH = (FR_CopyArr pp.flH)
-            FR_gMode = (FR_CopyArr pp.flMode)
-            FR_gWin = (FR_CopyArr pp.flWin)
-            FR_gHt = (FR_CopyArr pp.flHt)
-            FR_gSill = (FR_CopyArr pp.flSill)
-            FR_gBalc = (FR_CopyArr pp.flBalc)
-            FR_gBalcD = (FR_CopyArr pp.flBalcD)
-            FR_gBalcVar = (FR_CopyArr pp.flBalcVar)
+            -- complète les tableaux trop courts (anciens presets sans
+            -- flBalcD/flBalcVar : remplis avec les valeurs globales du preset)
+            FR_gH = FR_FitArr (FR_CopyArr pp.flH) pp.floors pp.upperH
+            FR_gMode = FR_FitArr (FR_CopyArr pp.flMode) pp.floors pp.upperMode
+            FR_gWin = FR_FitArr (FR_CopyArr pp.flWin) pp.floors pp.winPct
+            FR_gHt = FR_FitArr (FR_CopyArr pp.flHt) pp.floors pp.winHt
+            FR_gSill = FR_FitArr (FR_CopyArr pp.flSill) pp.floors pp.winSill
+            FR_gBalc = FR_FitArr (FR_CopyArr pp.flBalc) pp.floors "None"
+            FR_gBalcD = FR_FitArr (FR_CopyArr pp.flBalcD) pp.floors pp.balcD
+            FR_gBalcVar = FR_FitArr (FR_CopyArr pp.flBalcVar) pp.floors 0.0
             LoadFloor 1
             flCustom = true
 
