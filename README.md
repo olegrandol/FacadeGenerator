@@ -28,6 +28,19 @@ guides d'étages et moulures balayées).
 
 Copier dans `plugcfg\FRAMER\presets` puis Charger.
 
+## Version 0.6.20
+
+- **Deux pans (mode contour) : pignons maçonnés** — murs triangulaires aux
+  extrémités du faîtage (matériau murs), comme en façade simple ; le débord
+  reste en porte-à-faux au-dessus.
+- **Mansard (mode contour) : vrai mansard** — fini le repli 4 pans. Brisis
+  raide (pente principale), terrasson doux (pente 2), plateau plat +
+  acrotère au sommet, le tout en bandes suivant le contour décalé
+  (footprints convexes recommandés ; message de diagnostic si le décalage
+  intérieur est impossible).
+- **Section toits réorganisée en module interne** du fichier unique
+  (livrable toujours en un seul `.ms`).
+
 ## Version 0.6.19
 
 - **Toits en pente du mode contour « dans le bâtiment »** : les versants

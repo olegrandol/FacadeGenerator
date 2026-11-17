@@ -1,7 +1,14 @@
 /*
-    FRAMER 0.6.19
+    FRAMER 0.6.20
     Générateur procédural de façades
     Autodesk 3ds Max 2026
+
+    NOUVEAU EN 0.6.20 (toits du mode contour) :
+    - DEUX PANS : pignons maçonnés ajoutés (murs triangulaires aux extrémités
+      du faîtage, matériau murs) — le débord reste en porte-à-faux au-dessus.
+    - MANSARD : vrai mansard suivant le contour (fini le repli 4 pans) —
+      brisis raide (pente principale), terrasson doux (pente 2), plateau
+      plat + acrotère au sommet, le tout en bandes suivant le contour décalé.
 
     CORRIGÉ EN 0.6.19 :
     - TOITS EN PENTE DU MODE CONTOUR « DANS LE BÂTIMENT » : les versants
@@ -348,7 +355,7 @@
       bouche la vue d'en dessous, débord compris.
       * Terrasse : dalle + acrotère suivant le contour décalé.
       * Deux pentes : les versants suivent le contour décalé, faîtage exact sur le plus long
-        segment (pas de pignons maçonnés en mode contour ; le fond ferme le bâtiment).
+        segment, pignons maçonnés aux extrémités (0.6.20).
       * Quatre pans : même principe, pans de bout coupés par les diagonales à 45° des
         extrémités du faîtage (footprints convexes recommandés).
 
@@ -2893,6 +2900,25 @@ fn FR_RoofSlopesContour p pts ex inw p1 uMin uMax wMin wMax pitch hip mat z0 =
     )
 )
 
+-- bande de toit entre deux contours imbriqués (brisis / terrasson du mansard en
+-- mode contour) : un prisme planaire par arête (O à z1, I à z2, arêtes parallèles).
+fn FR_RoofBandContour p O I z1 z2 mat =
+(
+    local n = O.count
+
+    if n >= 3 and I.count == n do
+    (
+        for k = 1 to n do
+        (
+            local k2 = k + 1
+            if k2 > n do k2 = 1
+
+            FR_Prisma (p + "_" + (k as string)) \
+                #([O[k].x, O[k].y, z1], [O[k2].x, O[k2].y, z1], [I[k2].x, I[k2].y, z2], [I[k].x, I[k].y, z2]) mat 0.12
+        )
+    )
+)
+
 -- toit du contour : il part du contour DÉCALÉ vers l'extérieur (débord), avec un fond fermé
 -- (terrasse : dalle + acrotère suivant le contour ; pentes : faîtage sur le plus long segment)
 fn FR_RoofContour pts segPRs bases totalH =
@@ -2924,7 +2950,7 @@ fn FR_RoofContour pts segPRs bases totalH =
     )
     -- Mansard en mode contour : repli quatre pans (faîtage sur le plus long
     -- segment) ; le vrai brisis/terrasson n'existe qu'en façade simple.
-    else if PR0.roofMode == "Gable" or PR0.roofMode == "Hip" or PR0.roofMode == "Mansard" then
+    else if PR0.roofMode == "Gable" or PR0.roofMode == "Hip" then
     (
         -- le plus long segment donne la direction du faîtage
         local kLong = 1
@@ -2958,8 +2984,112 @@ fn FR_RoofContour pts segPRs bases totalH =
         -- fond fermé à la hauteur des murs (visible d'en dessous, ferme aussi le débord)
         FR_RoofCapContour "FRAMER_Roof_Cap" oPts totalH roofMat
 
-        -- versants suivant le contour décalé (pignons maçonnés non générés en mode contour)
+        -- versants suivant le contour décalé
         FR_RoofSlopesContour "FRAMER_Roof" oPts ex inw p1 uMin uMax wMin wMax PR0.roofPitch (PR0.roofMode == "Hip") roofMat totalH
+
+        -- 0.6.20 : pignons maçonnés du 2 pans (triangles aux extrémités du faîtage,
+        -- comme en façade simple — le débord reste en porte-à-faux au-dessus)
+        if PR0.roofMode == "Gable" do
+        (
+            local hP = ((wMax - wMin)/2.0) * (tan PR0.roofPitch)
+
+            if hP > 0.05 do
+            (
+                local wmP = (wMin + wMax)/2.0
+
+                -- étendue des MURS (contour, pas le débord) dans la direction du faîtage
+                local uCMin = 0.0
+                local uCMax = 0.0
+
+                for q in pts do
+                (
+                    local du = dot (q - p1) ex
+
+                    if du < uCMin do uCMin = du
+                    if du > uCMax do uCMax = du
+                )
+
+                local wallMat = FR_Material "FRAMER_Walls" PR0.colWall 100 apply:true
+
+                for k = 1 to 2 do
+                (
+                    local uu = if k == 1 then uCMin else uCMax
+
+                    FR_Prisma ("FRAMER_Roof_Pignon" + (k as string)) \
+                        #(p1 + ex*uu + inw*wMin + [0,0,totalH], \
+                          p1 + ex*uu + inw*wMax + [0,0,totalH], \
+                          p1 + ex*uu + inw*wmP + [0,0,totalH+hP]) wallMat 0.12
+                )
+            )
+        )
+    )
+    -- 0.6.20 : VRAI mansard en mode contour (fini le repli 4 pans) — brisis raide
+    -- (bande oPts -> i1 à la pente principale), terrasson doux (bande i1 -> i2 à la
+    -- pente 2), plateau plat + acrotère, tout suivant le contour décalé.
+    else if PR0.roofMode == "Mansard" do
+    (
+        -- le plus long segment donne la direction du faîtage
+        local kLong = 1
+
+        for k = 2 to pts.count do
+        (
+            if bases[k][2] > bases[kLong][2] do kLong = k
+        )
+
+        local ex = bases[kLong][1][1]
+        local inw = bases[kLong][1][2]
+        local p1 = pts[kLong]
+
+        local wMin = 0.0
+        local wMax = 0.0
+
+        for q in oPts do
+        (
+            local dw = dot (q - p1) inw
+
+            if dw < wMin do wMin = dw
+            if dw > wMax do wMax = dw
+        )
+
+        -- course horizontale des deux pentes (comme FR_RoofMansardRect)
+        local runT = amax #(0.2, ((wMax - wMin) - PR0.mansTop)/2.0)
+        local r1 = runT*0.45
+        local r2 = runT - r1
+        local t1 = runT
+        local h1 = r1 * (tan PR0.roofPitch)
+        local h2 = h1 + r2 * (tan PR0.mansP2)
+
+        -- fond fermé à la hauteur des murs
+        FR_RoofCapContour "FRAMER_Roof_Cap" oPts totalH roofMat
+
+        if h1 > 0.05 then
+        (
+            local i1 = FR_OffsetContour oPts (-r1)
+            local i2 = FR_OffsetContour oPts (-t1)
+
+            if i1.count == oPts.count and i2.count == oPts.count then
+            (
+                FR_RoofBandContour "FRAMER_Roof_Brisis" oPts i1 totalH (totalH + h1) roofMat
+                FR_RoofBandContour "FRAMER_Roof_Terrasson" i1 i2 (totalH + h1) (totalH + h2) roofMat
+
+                -- plateau plat au sommet + acrotère (comme le mansard sur rectangle)
+                local zP = totalH + h2
+
+                FR_RoofSlabContour "FRAMER_Roof_Plateau" i2 zP 0.2 roofMat
+
+                if PR0.roofPar > 0.05 do
+                (
+                    local i3 = FR_OffsetContour i2 (-PR0.roofPar)
+
+                    if i3.count == i2.count do
+                        FR_RoofBac "FRAMER_Roof_Parapet" i2 i3 (zP + 0.2) PR0.roofPar (PR0.roofPar - 0.05) roofMat
+                )
+            )
+            else
+                FR_Msg "Mansard annulé : décalage du contour impossible (forme trop étroite ou trop concave pour le brisis/terrasson)."
+        )
+        else
+            FR_Msg "Mansard annulé : hauteur de brisis nulle (pente trop faible ou plateau trop large pour la profondeur)."
     )
 )
 
@@ -4459,7 +4589,7 @@ fn FR_ShapeFilter o = (superclassof o == shape)
    INTERFACE (6 onglets)
 ========================================================= */
 
-rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.19" width:430
+rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.20" width:430
 (
     -- valeurs par étage du mode "indépendants" : variables globales FR_gH, FR_gMode, ... (voir plus haut)
     local curFloor = 1
@@ -4622,7 +4752,7 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.19" width:430
     spinner spRidgeW "" pos:[215,548] width:190 range:[0.05,1,0.18] type:#float scale:0.01 tooltip:"Largeur du couvre-joint posé sur les jonctions de versants."
     label l_spRidgeH "Hauteur du couvre-joint :" pos:[25,576] width:185 height:16
     spinner spRidgeH "" pos:[215,574] width:190 range:[0.02,0.5,0.10] type:#float scale:0.01 tooltip:"Hauteur du couvre-joint au-dessus de la jonction."
-    label lbRoofHelp "Le toit part du contour décalé vers l'extérieur (débord), fond fermé vu de dessous. Terrasse : dalle + acrotère suivant le contour. Deux/quatre pans : faîtage sur le plus long segment, versants suivant le contour (footprints convexes recommandés ; pas de pignons maçonnés en mode contour). Un toit remplace la corniche." pos:[25,394] width:380 height:48
+    label lbRoofHelp "Le toit part du contour décalé vers l'extérieur (débord), fond fermé vu de dessous. Terrasse : dalle + acrotère suivant le contour. Deux pans : versants + pignons maçonnés. Quatre pans : faîtage sur le plus long segment. Mansard : brisis raide + terrasson doux + plateau + acrotère, tout suivant le contour (footprints convexes recommandés). Un toit remplace la corniche." pos:[25,394] width:380 height:48
 
     -- lucarnes du toit mansardé (0.6.17) — 0.6.18 : remontées au-dessus du bouton
     -- GÉNÉRER (y=700) avec lequel la ligne « Espacement » se superposait
@@ -5604,8 +5734,8 @@ rollout FRAMER_UI "FRAMER | Générateur de façades 0.6.19" width:430
         try
         (
             setDialogTitle FRAMER_UI (if edit then \
-                "FRAMER | Générateur de façades 0.6.19 — ● ÉDITION ●" else \
-                "FRAMER | Générateur de façades 0.6.19")
+                "FRAMER | Générateur de façades 0.6.20 — ● ÉDITION ●" else \
+                "FRAMER | Générateur de façades 0.6.20")
         )
         catch()
 
